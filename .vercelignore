@@ -1,0 +1,14 @@
+{
+"build": {
+"env": {
+"NODE_ENV": "production"
+}
+},
+"routes": [
+{
+"src": "/[^.]+",
+"dest": "/index.html"
+}
+],
+"outputDirectory": "build"
+}
