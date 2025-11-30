@@ -36,12 +36,12 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 
 // --- FIREBASE SETUP ---
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY", 
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+  authDomain: "meo-bakery-4c04f.firebaseapp.com",
+  projectId: "meo-bakery-4c04f",
+  storageBucket: "meo-bakery-4c04f.firebasestorage.app",
+  messagingSenderId: "289466483676",
+  appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
 };
 
 let firebaseConfig;
