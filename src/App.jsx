@@ -36,7 +36,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 
 // --- FIREBASE SETUP ---
 const DEFAULT_FIREBASE_CONFIG = {
- apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
@@ -85,9 +85,18 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
 const db = getFirestore(app);
 
 // --- GEMINI API UTILS ---
-const apiKey = ""; 
+// Lấy API Key từ biến môi trường Vercel
+let apiKey = "";
+if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_GEMINI_API_KEY) {
+  apiKey = process.env.REACT_APP_GEMINI_API_KEY;
+}
 
 const callGemini = async (prompt) => {
+  if (!apiKey) {
+    console.error("Thiếu API Key Gemini!");
+    return "Lỗi: Chưa cấu hình API Key cho AI (REACT_APP_GEMINI_API_KEY).";
+  }
+
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
