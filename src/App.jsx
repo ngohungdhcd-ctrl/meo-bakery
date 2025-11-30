@@ -42,6 +42,7 @@ const DEFAULT_FIREBASE_CONFIG = {
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
   messagingSenderId: "289466483676",
   appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
+
 };
 
 let firebaseConfig;
@@ -92,9 +93,10 @@ if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_GEMIN
 }
 
 const callGemini = async (prompt) => {
+  // FIX: Ném lỗi (Throw Error) thay vì trả về chuỗi để tránh lỗi JSON Parse bên dưới
   if (!apiKey) {
     console.error("Thiếu API Key Gemini!");
-    return "Lỗi: Chưa cấu hình API Key cho AI (REACT_APP_GEMINI_API_KEY).";
+    throw new Error("Chưa cấu hình API Key (REACT_APP_GEMINI_API_KEY) hoặc chưa Redeploy trên Vercel.");
   }
 
   try {
@@ -112,7 +114,7 @@ const callGemini = async (prompt) => {
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "Xin lỗi, AI đang bận.";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "Đã xảy ra lỗi kết nối với Trợ lý AI.";
+    throw error; // Ném lỗi ra để hàm gọi xử lý
   }
 };
 
@@ -540,7 +542,7 @@ const AIConsultantModal = ({ isOpen, onClose, onApply }) => {
       const parsedData = JSON.parse(jsonStr);
       setResult(parsedData);
     } catch (e) {
-      alert("AI không hiểu yêu cầu hoặc có lỗi.");
+      alert("AI không hiểu yêu cầu hoặc API Key bị thiếu/lỗi trên Vercel. Vui lòng kiểm tra lại.");
       console.error(e);
     } finally {
       setLoading(false);
