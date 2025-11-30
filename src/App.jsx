@@ -36,12 +36,12 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 
 // --- FIREBASE SETUP ---
 const DEFAULT_FIREBASE_CONFIG = {
- apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
-  authDomain: "meo-bakery-4c04f.firebaseapp.com",
-  projectId: "meo-bakery-4c04f",
-  storageBucket: "meo-bakery-4c04f.firebasestorage.app",
-  messagingSenderId: "289466483676",
-  appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
+  apiKey: "YOUR_API_KEY", 
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 let firebaseConfig;
@@ -147,6 +147,24 @@ const Toast = ({ message, type = 'success', onClose }) => {
     <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-medium flex items-center gap-2 animate-fade-in-down ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
       {type === 'error' ? <AlertCircle size={20}/> : <Check size={20}/>}
       {message}
+    </div>
+  );
+};
+
+// Component Xem trước ảnh (MỚI)
+const ImagePreviewModal = ({ src, onClose }) => {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-fade-in-up" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 bg-white/10 rounded-full transition">
+        <X size={32} />
+      </button>
+      <img 
+        src={src} 
+        alt="Preview" 
+        className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" 
+        onClick={(e) => e.stopPropagation()} 
+      />
     </div>
   );
 };
@@ -801,6 +819,7 @@ const CreateOrderForm = ({ onSubmit }) => {
 
 const OrderList = ({ orders }) => {
   const [selectedOrderForZalo, setSelectedOrderForZalo] = useState(null);
+  const [viewImage, setViewImage] = useState(null);
 
   return (
     <div className="space-y-6">
@@ -826,7 +845,13 @@ const OrderList = ({ orders }) => {
                      {order.sampleImages && order.sampleImages.length > 0 && (
                        <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
                          {order.sampleImages.map((img, idx) => (
-                           <img key={idx} src={img} alt="Mẫu" className="w-24 h-24 object-cover rounded border border-gray-200 flex-shrink-0 cursor-pointer hover:opacity-90 transition" onClick={() => window.open(img, '_blank')} />
+                           <img 
+                             key={idx} 
+                             src={img} 
+                             alt="Mẫu" 
+                             className="w-24 h-24 object-cover rounded border border-gray-200 flex-shrink-0 cursor-pointer hover:opacity-90 transition" 
+                             onClick={() => setViewImage(img)} // Thay đổi để mở modal
+                           />
                          ))}
                        </div>
                      )}
@@ -851,6 +876,7 @@ const OrderList = ({ orders }) => {
          </div>
        )}
        {selectedOrderForZalo && <GenerateZaloModal order={selectedOrderForZalo} onClose={() => setSelectedOrderForZalo(null)} />}
+       {viewImage && <ImagePreviewModal src={viewImage} onClose={() => setViewImage(null)} />}
     </div>
   );
 };
