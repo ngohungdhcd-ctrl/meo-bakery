@@ -32,16 +32,61 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- FIREBASE SETUP ---
-const firebaseConfig = JSON.parse(__firebase_config);
+// Cấu hình an toàn và nhận biến môi trường từ Vercel (REACT_APP_)
+const DEFAULT_FIREBASE_CONFIG = {
+apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+  authDomain: "meo-bakery-4c04f.firebaseapp.com",
+  projectId: "meo-bakery-4c04f",
+  storageBucket: "meo-bakery-4c04f.firebasestorage.app",
+  messagingSenderId: "289466483676",
+  appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
+};
+
+let firebaseConfig;
+let appId;
+let firebaseConfigError = null;
+
+try {
+    // 1. Lấy biến môi trường từ Vercel (REACT_APP_FIREBASE_CONFIG)
+    const envConfigJson = process.env.REACT_APP_FIREBASE_CONFIG;
+    
+    // 2. Kiểm tra nếu cấu hình thật tồn tại
+    if (envConfigJson) {
+        // Cố gắng Parse chuỗi JSON
+        firebaseConfig = JSON.parse(envConfigJson);
+        // Lấy appId từ cấu hình thật
+        appId = firebaseConfig.appId.split(':').pop() || 'default-app-id'; 
+        
+    } else if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        // Fallback cho môi trường Canvas
+        firebaseConfig = JSON.parse(__firebase_config);
+        appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    } else {
+        // Nếu không có cả 2, dùng default và báo lỗi
+        firebaseConfig = DEFAULT_FIREBASE_CONFIG;
+        appId = 'default-app-id';
+        firebaseConfigError = "Cấu hình Firebase (REACT_APP_FIREBASE_CONFIG) chưa được thiết lập trên Vercel!";
+    }
+} catch (e) {
+    firebaseConfigError = "Lỗi cú pháp JSON trong biến REACT_APP_FIREBASE_CONFIG. Vui lòng kiểm tra lại dấu ngoặc và dấu nháy kép.";
+    firebaseConfig = DEFAULT_FIREBASE_CONFIG;
+    appId = 'default-app-id';
+    console.error("Firebase Config Parsing Error:", e);
+}
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+// Sửa lỗi: initialAuthToken không được định nghĩa trong code cũ
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- GEMINI API UTILS ---
 const apiKey = ""; 
 
 const callGemini = async (prompt) => {
+  // ... (Không thay đổi)
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
@@ -120,13 +165,38 @@ export default function App() {
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 
+  // HIỂN THỊ LỖI CẤU HÌNH RÕ RÀNG
+  if (firebaseConfigError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+        <div className="bg-white border-4 border-red-500 p-8 rounded-xl shadow-2xl max-w-lg text-center">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-red-700 mb-4">LỖI CẤU HÌNH HỆ THỐNG</h1>
+          <p className="text-gray-700 font-medium mb-6">{firebaseConfigError}</p>
+          <p className="text-sm text-gray-500">
+            Vui lòng kiểm tra lại **Environment Variable (Biến Môi Trường)** trên Vercel: 
+            <code className="bg-gray-200 p-1 rounded font-mono block mt-2">REACT_APP_FIREBASE_CONFIG</code>.
+            Nội dung phải là chuỗi JSON hợp lệ.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // 1. Initialize Auth
+  
   useEffect(() => {
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Firebase Auth Error:", e);
+        // Nếu Vercel không cung cấp token, chuyển thẳng đến login
+        setView('login');
       }
     };
     initAuth();
@@ -143,6 +213,9 @@ export default function App() {
     if (!user) return;
 
     // Listen to Users
+    // Sử dụng userId của Firebase Auth để tạo đường dẫn Public data an toàn
+    const userId = user.uid || 'anonymous-user'; 
+    
     const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
     const unsubUsers = onSnapshot(usersRef, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -166,7 +239,6 @@ export default function App() {
 
     // Listen to Orders (Ordered by newest)
     const ordersRef = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-    // Note: Simple query, sorting in memory to avoid index requirement errors in this environment
     const unsubOrders = onSnapshot(ordersRef, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -235,7 +307,7 @@ export default function App() {
         createdBy: appUser.name,
         createdAt: new Date().toISOString(),
         status: 'new',
-        orderId: Date.now().toString().slice(-6) // Simple short ID
+        orderId: Date.now().toString().slice(-6)
       };
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), newOrder);
       showToast('Tạo đơn thành công!');
