@@ -36,7 +36,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 
 // --- FIREBASE SETUP ---
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+ apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
@@ -64,7 +64,7 @@ try {
         firebaseConfig = JSON.parse(__firebase_config);
         appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     } else {
-        // Nếu không có cả 2, dùng default (sẽ chỉ báo lỗi nếu chạy trên Vercel mà quên set biến)
+        // Nếu không có cả 2, dùng default
         firebaseConfig = DEFAULT_FIREBASE_CONFIG;
         appId = 'default-app-id';
         // Chỉ báo lỗi nếu không phải môi trường dev cục bộ
@@ -279,7 +279,6 @@ export default function App() {
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), newUser);
       showToast('Đăng ký thành công! Hãy đăng nhập.');
-      // Không chuyển view để người dùng thấy thông báo
     } catch (e) {
       console.error(e);
       showToast('Lỗi khi đăng ký', 'error');
@@ -306,10 +305,11 @@ export default function App() {
       setActiveTab('orders');
     } catch (e) {
       console.error(e);
-      if (e.code === 'resource-exhausted') {
-        showToast('Lỗi: Dung lượng ảnh quá lớn cho phép!', 'error');
+      // Xử lý lỗi quota nếu ảnh quá lớn
+      if (e.code === 'resource-exhausted' || e.message.includes('longer than')) {
+        showToast('Lỗi: Tổng dung lượng ảnh quá lớn! Vui lòng giảm số lượng ảnh.', 'error');
       } else {
-        showToast('Lỗi khi tạo đơn', 'error');
+        showToast('Lỗi khi tạo đơn: ' + e.message, 'error');
       }
     }
   };
@@ -452,6 +452,39 @@ const SidebarItem = ({ icon, label, active, onClick, visible = true }) => {
       <span className="font-medium">{label}</span>
     </button>
   );
+};
+
+// Hàm nén ảnh client-side để giảm dung lượng
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // Giới hạn kích thước tối đa tăng lên 1024px để giữ chi tiết
+        const MAX_WIDTH = 1024; 
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Nén thành JPEG chất lượng 80% (0.8) để ảnh nét hơn
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+    };
+  });
 };
 
 const AIConsultantModal = ({ isOpen, onClose, onApply }) => {
@@ -637,30 +670,24 @@ const CreateOrderForm = ({ onSubmit }) => {
     }));
   };
 
-  // --- XỬ LÝ ẢNH ---
-  const handleImageChange = (e) => {
+  // --- XỬ LÝ ẢNH (Updated with compression) ---
+  const handleImageChange = async (e) => {
     const files = Array.from(e.target.files);
     
-    // Kiểm tra tổng số lượng ảnh
-    if (files.length + images.length > 10) {
-      alert("Chỉ được tải lên tối đa 10 ảnh!");
+    // Kiểm tra tổng số lượng ảnh (GIẢM XUỐNG CÒN 5 ẢNH ĐỂ ĐẢM BẢO DUNG LƯỢNG)
+    if (files.length + images.length > 5) {
+      alert("Chỉ được tải lên tối đa 5 ảnh để đảm bảo chất lượng!");
       return;
     }
 
-    files.forEach(file => {
-      // Kiểm tra dung lượng (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`File ${file.name} quá lớn (Max 5MB)!`);
-        return;
-      }
-
-      // Đọc file thành Base64 để hiển thị preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImages(prev => [...prev, reader.result]);
-      };
-      reader.readAsDataURL(file);
-    });
+    // Nén ảnh và cập nhật state
+    try {
+        const compressedImages = await Promise.all(files.map(file => compressImage(file)));
+        setImages(prev => [...prev, ...compressedImages]);
+    } catch (error) {
+        console.error("Lỗi nén ảnh:", error);
+        alert("Có lỗi khi xử lý ảnh.");
+    }
   };
 
   const removeImage = (index) => {
@@ -698,7 +725,18 @@ const CreateOrderForm = ({ onSubmit }) => {
 
           <div className="space-y-4">
             <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex justify-between">Chi Tiết Bánh</h3>
-            <div><label className="block text-sm font-medium text-gray-600 mb-1">Loại bánh</label><select required className={inputClass} value={form.cakeType} onChange={e => setForm({...form, cakeType: e.target.value})}><option value="">-- Chọn loại bánh --</option><option value="Bánh Kem Sữa Tươi">Bánh Kem Sữa Tươi</option><option value="Bánh Mousse">Bánh Mousse</option><option value="Bánh Tiramisu">Bánh Tiramisu</option><option value="Bánh Bắp">Bánh Bắp</option><option value="Bánh Bông Lan Trứng Muối">Bánh Bông Lan Trứng Muối</option><option value="Khác">Khác</option></select></div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Loại bánh</label>
+              <select required className={inputClass} value={form.cakeType} onChange={e => setForm({...form, cakeType: e.target.value})}>
+                <option value="">-- Chọn loại bánh --</option>
+                <option value="Bánh Kem Sữa Tươi">Bánh Kem Sữa Tươi</option>
+                <option value="Bánh Mousse">Bánh Mousse</option>
+                <option value="Bánh Tiramisu">Bánh Tiramisu</option>
+                <option value="Bánh Bắp">Bánh Bắp</option>
+                <option value="Bánh Bông Lan Trứng Muối">Bánh Bông Lan Trứng Muối</option>
+                <option value="Khác">Khác</option>
+              </select>
+            </div>
             <div><label className="block text-sm font-medium text-gray-600 mb-1">Yêu cầu (Size, cốt bánh...)</label><textarea className={`${inputClass} h-20`} value={form.requests} onChange={e => setForm({...form, requests: e.target.value})} placeholder="VD: Size 20cm, cốt vani, ít ngọt..." /></div>
             <div><label className="block text-sm font-medium text-gray-600 mb-1">Lời chúc</label><input type="text" className={inputClass} value={form.message} onChange={e => setForm({...form, message: e.target.value})} placeholder="VD: Happy Birthday Mẹ Yêu" /></div>
           </div>
@@ -707,7 +745,7 @@ const CreateOrderForm = ({ onSubmit }) => {
         {/* --- PHẦN ẢNH MẪU BÁNH MỚI --- */}
         <div className="mt-6">
            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-             <ImageIcon size={20}/> Ảnh Mẫu Bánh (Tối đa 10 ảnh)
+             <ImageIcon size={20}/> Ảnh Mẫu Bánh (Tối đa 5 ảnh)
            </h3>
            
            <div className="space-y-4">
@@ -717,7 +755,7 @@ const CreateOrderForm = ({ onSubmit }) => {
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                         <Upload className="w-8 h-8 mb-2 text-orange-500" />
                         <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Bấm để tải ảnh lên</span></p>
-                        <p className="text-xs text-gray-400">PNG, JPG (Max 5MB/ảnh)</p>
+                        <p className="text-xs text-gray-400">PNG, JPG (Tự động nén, tối đa 5 ảnh)</p>
                     </div>
                     <input type="file" className="hidden" multiple accept="image/*" onChange={handleImageChange} />
                 </label>
@@ -784,11 +822,11 @@ const OrderList = ({ orders }) => {
                      <p className="text-gray-600 text-sm mt-1">🕒 Lấy bánh: {new Date(order.pickupTime).toLocaleString('vi-VN')}</p>
                      <p className="text-gray-600 text-sm">📍 {order.address || 'Lấy tại tiệm'}</p>
                      
-                     {/* HIỂN THỊ ẢNH TRONG DANH SÁCH */}
+                     {/* HIỂN THỊ ẢNH TRONG DANH SÁCH (Ảnh sẽ nét hơn) */}
                      {order.sampleImages && order.sampleImages.length > 0 && (
                        <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
                          {order.sampleImages.map((img, idx) => (
-                           <img key={idx} src={img} alt="Mẫu" className="w-16 h-16 object-cover rounded border border-gray-200 flex-shrink-0" />
+                           <img key={idx} src={img} alt="Mẫu" className="w-24 h-24 object-cover rounded border border-gray-200 flex-shrink-0 cursor-pointer hover:opacity-90 transition" onClick={() => window.open(img, '_blank')} />
                          ))}
                        </div>
                      )}
