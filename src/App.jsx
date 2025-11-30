@@ -15,9 +15,12 @@ import {
   Copy,
   Check,
   AlertCircle,
-  Upload, // Icon tải lên
-  Image as ImageIcon, // Icon hình ảnh
-  Trash2 // Icon xóa
+  Upload, 
+  Image as ImageIcon, 
+  Trash2,
+  Home as HomeIcon,
+  Search,
+  ArrowRight
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -36,7 +39,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 
 // --- FIREBASE SETUP ---
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+ apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
@@ -49,7 +52,6 @@ let appId;
 let firebaseConfigError = null;
 
 try {
-    // FIX: Sử dụng try-catch để lấy biến môi trường một cách an toàn nhất
     let envConfigJson = null;
     try {
         envConfigJson = process.env.REACT_APP_FIREBASE_CONFIG;
@@ -60,13 +62,11 @@ try {
         appId = firebaseConfig.appId.split(':').pop() || 'default-app-id'; 
         
     } else if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        // Fallback cho môi trường Canvas
         firebaseConfig = JSON.parse(__firebase_config);
         appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     } else {
         firebaseConfig = DEFAULT_FIREBASE_CONFIG;
         appId = 'default-app-id';
-        // Kiểm tra xem có đang chạy trên môi trường có process không để báo lỗi
         try {
              if (process.env.NODE_ENV === 'production') {
                  firebaseConfigError = "Cấu hình Firebase (REACT_APP_FIREBASE_CONFIG) chưa được thiết lập trên Vercel!";
@@ -87,7 +87,6 @@ const db = getFirestore(app);
 
 // --- GEMINI API UTILS ---
 let apiKey = "";
-// FIX: Lấy API Key bằng try-catch để đảm bảo hoạt động trên Vercel
 try {
   apiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
 } catch (e) {
@@ -138,16 +137,36 @@ const ROLE_LABELS = {
 
 const OWNER_PHONE = '0868679094';
 
+// Danh sách sản phẩm mẫu để trưng bày
+const SAMPLE_PRODUCTS = [
+  { id: 1, name: "Bánh Kem Dâu Tây", price: "350.000", image: "https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&w=500&q=80", tag: "Best Seller" },
+  { id: 2, name: "Tiramisu Cổ Điển", price: "400.000", image: "https://images.unsplash.com/photo-1571115177098-24ec42ed204d?auto=format&fit=crop&w=500&q=80", tag: "Mới" },
+  { id: 3, name: "Bánh Bắp Phô Mai", price: "320.000", image: "https://images.unsplash.com/photo-1535141192574-5d4897c12636?auto=format&fit=crop&w=500&q=80", tag: "Yêu thích" },
+  { id: 4, name: "Chocolate Chảy", price: "450.000", image: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80", tag: null },
+  { id: 5, name: "Bông Lan Trứng Muối", price: "280.000", image: "https://images.unsplash.com/photo-1623428187969-5da2dcea5ebf?auto=format&fit=crop&w=500&q=80", tag: "Hot" },
+  { id: 6, name: "Macaron Tổng Hợp", price: "150.000", image: "https://images.unsplash.com/photo-1569864358642-9d1684040f43?auto=format&fit=crop&w=500&q=80", tag: null },
+];
+
 // --- COMPONENTS ---
 
-const Logo = ({ className }) => (
-  <div className={`flex items-center gap-2 font-bold text-2xl text-orange-600 ${className}`}>
-    <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white">
-      <Cake size={24} />
+// Logo Component - Có thể thay thế bằng URL ảnh
+const Logo = ({ className, customUrl }) => {
+  // Thay đổi đường dẫn logo của bạn ở đây
+  const logoUrl = customUrl || ""; // Ví dụ: "https://example.com/logo.png"
+
+  return (
+    <div className={`flex items-center gap-2 font-bold text-2xl text-orange-600 ${className}`} style={{ fontFamily: 'Quicksand, sans-serif' }}>
+      {logoUrl ? (
+        <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain" />
+      ) : (
+        <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white shadow-md">
+          <Cake size={24} />
+        </div>
+      )}
+      <span>BanhKemMeo.vn</span>
     </div>
-    <span>BanhKemMeo.vn</span>
-  </div>
-);
+  );
+};
 
 const Toast = ({ message, type = 'success', onClose }) => {
   useEffect(() => {
@@ -156,7 +175,7 @@ const Toast = ({ message, type = 'success', onClose }) => {
   }, [onClose]);
 
   return (
-    <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-medium flex items-center gap-2 animate-fade-in-down ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
+    <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-2 animate-fade-in-down ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
       {type === 'error' ? <AlertCircle size={20}/> : <Check size={20}/>}
       {message}
     </div>
@@ -189,23 +208,33 @@ export default function App() {
   const [usersList, setUsersList] = useState([]);
   const [orders, setOrders] = useState([]);
   
-  const [view, setView] = useState('loading'); 
+  // State view mặc định là 'landing' (Trưng bày sản phẩm)
+  const [view, setView] = useState('landing'); 
   const [activeTab, setActiveTab] = useState('create-order'); 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 
+  // Load Font Quicksand
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+    return () => document.head.removeChild(link);
+  }, []);
+
   // HIỂN THỊ LỖI CẤU HÌNH RÕ RÀNG
   if (firebaseConfigError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4" style={{ fontFamily: 'Quicksand, sans-serif' }}>
         <div className="bg-white border-4 border-red-500 p-8 rounded-xl shadow-2xl max-w-lg text-center">
           <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-red-700 mb-4">LỖI CẤU HÌNH HỆ THỐNG</h1>
           <p className="text-gray-700 font-medium mb-6">{firebaseConfigError}</p>
           <p className="text-sm text-gray-500">
-            Vui lòng kiểm tra lại **Environment Variable (Biến Môi Trường)** trên Vercel.
+            Vui lòng kiểm tra lại **Environment Variable** trên Vercel.
           </p>
         </div>
       </div>
@@ -223,14 +252,17 @@ export default function App() {
         }
       } catch (e) {
         console.error("Firebase Auth Error:", e);
-        setView('login');
       }
     };
     initAuth();
     
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setFirebaseUser(u);
-      if (!u) setView('login'); 
+      // Nếu đã có user firebase, kiểm tra xem có profile trong DB không để auto login
+      if (u) {
+         const savedPhone = localStorage.getItem('bkm_phone');
+         // Nếu đang ở landing page thì giữ nguyên, trừ khi reload lại trang quản trị
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -250,13 +282,12 @@ export default function App() {
         const found = list.find(u => u.phone === savedPhone);
         if (found) {
           setAppUser(found);
-          setView('dashboard');
-           if (found.role === ROLES.BAKER) setActiveTab('orders');
-        } else {
-          setView('login');
+          // Chỉ tự động vào dashboard nếu không phải đang ở landing page lần đầu
+          if (view === 'login') {
+             setView('dashboard');
+             if (found.role === ROLES.BAKER) setActiveTab('orders');
+          }
         }
-      } else {
-        setView('login');
       }
     }, (err) => console.error("Users sync error", err));
 
@@ -272,7 +303,7 @@ export default function App() {
       unsubUsers();
       unsubOrders();
     };
-  }, [user]);
+  }, [user, view]);
 
   // --- ACTIONS ---
 
@@ -309,6 +340,7 @@ export default function App() {
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), newUser);
       showToast('Đăng ký thành công! Hãy đăng nhập.');
+      setView('login');
     } catch (e) {
       console.error(e);
       showToast('Lỗi khi đăng ký', 'error');
@@ -318,7 +350,7 @@ export default function App() {
   const handleLogout = () => {
     setAppUser(null);
     localStorage.removeItem('bkm_phone');
-    setView('login');
+    setView('landing'); // Logout về trang chủ
   };
 
   const handleCreateOrder = async (orderData) => {
@@ -335,7 +367,6 @@ export default function App() {
       setActiveTab('orders');
     } catch (e) {
       console.error(e);
-      // Xử lý lỗi quota nếu ảnh quá lớn
       if (e.code === 'resource-exhausted' || e.message.includes('longer than')) {
         showToast('Lỗi: Tổng dung lượng ảnh quá lớn! Vui lòng giảm số lượng ảnh.', 'error');
       } else {
@@ -355,34 +386,127 @@ export default function App() {
     }
   };
 
-  // --- RENDER ---
+  const navigateToAdmin = () => {
+      if (appUser) {
+          setView('dashboard');
+      } else {
+          setView('login');
+      }
+  };
 
-  if (view === 'loading') return <div className="h-screen flex items-center justify-center text-orange-500"><Loader className="animate-spin" size={40}/></div>;
+  // --- VIEWS ---
 
-  if (view === 'login') {
+  if (view === 'loading') return <div className="h-screen flex items-center justify-center text-orange-500 font-quicksand"><Loader className="animate-spin" size={40}/></div>;
+
+  // VIEW: LANDING PAGE (Trưng bày sản phẩm)
+  if (view === 'landing') {
+      return (
+        <div className="min-h-screen bg-orange-50 font-quicksand flex flex-col relative" style={{ fontFamily: 'Quicksand, sans-serif' }}>
+            {/* Header */}
+            <header className="bg-white shadow-sm sticky top-0 z-30 px-4 md:px-8 py-4 flex justify-between items-center">
+                <Logo />
+                
+                {/* Nút Tạo đơn cho nhân viên (Góc màn hình) */}
+                <button 
+                    onClick={navigateToAdmin}
+                    className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-full font-bold hover:bg-orange-700 transition shadow-lg transform hover:scale-105"
+                >
+                    <Users size={18} />
+                    <span className="hidden md:inline">Nhân Viên / Tạo Đơn</span>
+                </button>
+            </header>
+
+            {/* Banner */}
+            <div className="bg-gradient-to-r from-orange-400 to-orange-600 text-white p-8 md:p-16 text-center shadow-inner relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/food.png')]"></div>
+                <h1 className="text-3xl md:text-5xl font-bold mb-4 drop-shadow-md">Hương Vị Ngọt Ngào Từ Trái Tim</h1>
+                <p className="text-lg md:text-xl opacity-90 max-w-2xl mx-auto">Chuyên các loại bánh kem sinh nhật, sự kiện với nguyên liệu tươi ngon nhất mỗi ngày.</p>
+            </div>
+
+            {/* Product Showcase Grid */}
+            <main className="flex-1 max-w-7xl mx-auto p-6 md:p-10 w-full">
+                <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800 border-l-4 border-orange-500 pl-3">Sản Phẩm Nổi Bật</h2>
+                    <div className="flex items-center bg-white rounded-full px-4 py-2 shadow-sm border border-gray-200">
+                        <Search size={18} className="text-gray-400 mr-2"/>
+                        <input type="text" placeholder="Tìm loại bánh..." className="outline-none text-sm bg-transparent" />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
+                    {SAMPLE_PRODUCTS.map(product => (
+                        <div key={product.id} className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group flex flex-col h-full border border-orange-100">
+                            <div className="relative pt-[100%] overflow-hidden">
+                                <img 
+                                    src={product.image} 
+                                    alt={product.name} 
+                                    className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                />
+                                {product.tag && (
+                                    <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md">
+                                        {product.tag}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="p-5 flex-1 flex flex-col">
+                                <h3 className="font-bold text-lg text-gray-800 mb-2 group-hover:text-orange-600 transition-colors">{product.name}</h3>
+                                <p className="text-gray-500 text-sm mb-4 line-clamp-2">Bánh tươi trong ngày, trang trí theo yêu cầu.</p>
+                                <div className="mt-auto flex items-center justify-between">
+                                    <span className="text-orange-600 font-extrabold text-lg">{product.price} đ</span>
+                                    <button className="bg-orange-100 text-orange-600 p-2 rounded-full hover:bg-orange-600 hover:text-white transition-colors">
+                                        <ArrowRight size={20} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </main>
+
+            <footer className="bg-gray-800 text-gray-400 py-8 text-center mt-12">
+                <p>© 2024 BanhKemMeo.vn - Hệ thống quản lý & trưng bày bánh kem.</p>
+            </footer>
+        </div>
+      );
+  }
+
+  // VIEW: LOGIN / REGISTER
+  if (view === 'login' || view === 'register') {
     return (
-      <>
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 relative" style={{ fontFamily: 'Quicksand, sans-serif' }}>
+        <button onClick={() => setView('landing')} className="absolute top-6 left-6 flex items-center gap-2 text-gray-600 hover:text-orange-600 font-medium transition">
+            <HomeIcon size={20}/> Về Trang Chủ
+        </button>
+        
         {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-        <AuthScreen type="login" onSwitch={() => setView('register')} onSubmit={handleLogin} />
-      </>
+        
+        <div className="bg-white w-full max-w-md p-8 md:p-10 rounded-3xl shadow-2xl border border-orange-100">
+            <div className="text-center mb-8">
+              <Logo className="justify-center mb-2" />
+              <h2 className="text-gray-500 text-sm">Hệ thống quản lý nội bộ</h2>
+            </div>
+
+            <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+              {view === 'login' ? 'Đăng Nhập Nhân Viên' : 'Đăng Ký Tài Khoản Mới'}
+            </h1>
+
+            {view === 'login' ? (
+                <AuthScreen type="login" onSwitch={() => setView('register')} onSubmit={handleLogin} />
+            ) : (
+                <AuthScreen type="register" onSwitch={() => setView('login')} onSubmit={handleRegister} />
+            )}
+        </div>
+      </div>
     );
   }
 
-  if (view === 'register') {
-    return (
-      <>
-        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-        <AuthScreen type="register" onSwitch={() => setView('login')} onSubmit={handleRegister} />
-      </>
-    );
-  }
-
+  // VIEW: DASHBOARD
   return (
-    <div className="min-h-screen bg-orange-50 font-sans text-gray-800 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-orange-50 text-gray-800 flex flex-col md:flex-row" style={{ fontFamily: 'Quicksand, sans-serif' }}>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
       
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-orange-100 h-screen sticky top-0 shadow-sm">
+      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-orange-100 h-screen sticky top-0 shadow-sm z-20">
         <div className="p-6 border-b border-orange-100">
           <Logo />
         </div>
@@ -403,7 +527,7 @@ export default function App() {
           />
           <SidebarItem 
             icon={<Users size={20}/>} 
-            label="Nhân Sự & Phân Quyền" 
+            label="Nhân Sự" 
             active={activeTab === 'users'} 
             onClick={() => setActiveTab('users')}
             visible={appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER}
@@ -422,9 +546,9 @@ export default function App() {
           </div>
           <button 
             onClick={handleLogout}
-            className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-medium w-full p-2 rounded hover:bg-red-50 transition-colors"
+            className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-medium w-full p-2 rounded-lg hover:bg-red-50 transition-colors"
           >
-            <LogOut size={16} /> Đăng xuất
+            <LogOut size={16} /> Thoát
           </button>
         </div>
       </aside>
@@ -439,23 +563,24 @@ export default function App() {
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-10 bg-white pt-20 px-6">
+        <div className="md:hidden fixed inset-0 z-30 bg-white pt-20 px-6 animate-fade-in-up">
+          <button onClick={() => setMobileMenuOpen(false)} className="absolute top-4 right-4 text-gray-500"><X size={24}/></button>
           <nav className="space-y-4 text-lg">
              {appUser?.role !== ROLES.BAKER && (
-                <button onClick={() => { setActiveTab('create-order'); setMobileMenuOpen(false); }} className="block w-full text-left py-2 border-b">Tạo Đơn Bánh</button>
+                <button onClick={() => { setActiveTab('create-order'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Tạo Đơn Bánh</button>
              )}
-             <button onClick={() => { setActiveTab('orders'); setMobileMenuOpen(false); }} className="block w-full text-left py-2 border-b">Danh Sách Đơn</button>
+             <button onClick={() => { setActiveTab('orders'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Danh Sách Đơn</button>
              {(appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER) && (
-                <button onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} className="block w-full text-left py-2 border-b">Quản Lý Nhân Sự</button>
+                <button onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Quản Lý Nhân Sự</button>
              )}
-             <button onClick={handleLogout} className="block w-full text-left py-2 text-red-500 mt-4">Đăng xuất</button>
+             <button onClick={handleLogout} className="block w-full text-left py-3 text-red-500 mt-4 font-bold">Đăng xuất</button>
           </nav>
         </div>
       )}
 
       {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           {activeTab === 'create-order' && <CreateOrderForm onSubmit={handleCreateOrder} />}
           {activeTab === 'orders' && <OrderList orders={orders} />}
           {activeTab === 'users' && <UserManagement users={usersList} currentUser={appUser} onUpdateRole={handleUpdateRole} />}
@@ -472,14 +597,14 @@ const SidebarItem = ({ icon, label, active, onClick, visible = true }) => {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium ${
         active 
-        ? 'bg-orange-500 text-white shadow-md' 
-        : 'text-gray-600 hover:bg-orange-100'
+        ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' 
+        : 'text-gray-600 hover:bg-orange-100 hover:text-orange-700'
       }`}
     >
       {icon}
-      <span className="font-medium">{label}</span>
+      <span>{label}</span>
     </button>
   );
 };
@@ -564,7 +689,7 @@ const AIConsultantModal = ({ isOpen, onClose, onApply }) => {
             <>
               <p className="text-gray-600 mb-4 text-sm">Nhập yêu cầu khách hàng...</p>
               <textarea 
-                className="w-full border border-purple-200 rounded-xl p-3 h-28 focus:ring-2 focus:ring-purple-500 outline-none text-gray-700 bg-purple-50"
+                className="w-full border border-purple-200 rounded-xl p-3 h-28 focus:ring-2 focus:ring-purple-500 outline-none text-gray-700 bg-purple-50 rounded-lg"
                 placeholder="VD: Sinh nhật bé trai 5 tuổi, thích siêu nhân..."
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
@@ -589,8 +714,8 @@ const AIConsultantModal = ({ isOpen, onClose, onApply }) => {
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setResult(null)} className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">Thử lại</button>
-                <button onClick={() => { onApply(result); onClose(); }} className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">Áp dụng</button>
+                <button onClick={() => setResult(null)} className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition">Thử lại</button>
+                <button onClick={() => { onApply(result); onClose(); }} className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition">Áp dụng</button>
               </div>
             </div>
           )}
@@ -635,7 +760,7 @@ const GenerateZaloModal = ({ order, onClose }) => {
             <>
               <textarea className="w-full h-48 p-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" value={message} onChange={(e) => setMessage(e.target.value)}/>
               <div className="mt-4 flex justify-end gap-2">
-                <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Đóng</button>
+                <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">Đóng</button>
                 <button onClick={copyToClipboard} className={`px-4 py-2 rounded-lg flex items-center gap-2 text-white transition ${copied ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}>{copied ? <Check size={18}/> : <Copy size={18}/>} {copied ? 'Đã Copy' : 'Copy Tin'}</button>
               </div>
             </>
@@ -656,20 +781,16 @@ const AuthScreen = ({ type, onSwitch, onSubmit }) => {
   };
 
   return (
-    <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-xl border border-orange-100">
-        <div className="text-center mb-8"><Logo className="justify-center mb-2" /><h2 className="text-gray-500 text-sm">Hệ thống quản lý tiệm bánh</h2></div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">{type === 'login' ? 'Đăng Nhập' : 'Đăng Ký Tài Khoản'}</h1>
+    <div className="w-full">
         <form onSubmit={handleSubmit} className="space-y-4">
           {type === 'register' && (
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Họ và Tên</label><input required type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Nhập họ tên..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}/></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Họ và Tên</label><input required type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition" placeholder="Nhập họ tên..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}/></div>
           )}
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Số Điện Thoại</label><input required type="tel" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="VD: 0868679094" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})}/></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Mật Khẩu</label><input required type="password" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" placeholder="••••••" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})}/></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Số Điện Thoại</label><input required type="tel" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition" placeholder="VD: 0868679094" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})}/></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Mật Khẩu</label><input required type="password" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition" placeholder="••••••" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})}/></div>
           <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-lg shadow-lg transition transform active:scale-95">{type === 'login' ? 'Vào Hệ Thống' : 'Đăng Ký Ngay'}</button>
         </form>
         <div className="mt-6 text-center"><button onClick={onSwitch} className="text-orange-600 hover:underline text-sm font-medium">{type === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}</button></div>
-      </div>
     </div>
   );
 };
@@ -737,7 +858,7 @@ const CreateOrderForm = ({ onSubmit }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-orange-100 overflow-hidden relative">
+    <div className="bg-white rounded-2xl shadow-sm border border-orange-100 overflow-hidden relative">
       <div className="bg-orange-500 p-4 px-6 flex justify-between items-center">
         <h2 className="text-xl font-bold text-white flex items-center gap-2"><PlusCircle size={24}/> Tạo Đơn Bánh Mới</h2>
         <button onClick={() => setAiModalOpen(true)} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 backdrop-blur-sm transition border border-white/40"><Sparkles size={16} className="text-yellow-300"/> Trợ Lý Mèo AI</button>
