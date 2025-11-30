@@ -1,19 +1,11 @@
-@tailwind base;
-    @tailwind components;
-    @tailwind utilities;
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css'; // Dùng để import Tailwind CSS
 
-    /* Các animation cơ bản */
-    @keyframes fadeInDown {
-      from {
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .animate-fade-in-down {
-      animation: fadeInDown 0.3s ease-out forwards;
-    }
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
