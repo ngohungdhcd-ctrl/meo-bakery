@@ -42,7 +42,6 @@ const DEFAULT_FIREBASE_CONFIG = {
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
   messagingSenderId: "289466483676",
   appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
-
 };
 
 let firebaseConfig;
@@ -50,12 +49,12 @@ let appId;
 let firebaseConfigError = null;
 
 try {
-    // FIX: Kiểm tra an toàn biến process để tránh lỗi trên trình duyệt
+    // FIX: Sử dụng try-catch để lấy biến môi trường một cách an toàn nhất
     let envConfigJson = null;
-    if (typeof process !== 'undefined' && process.env) {
+    try {
         envConfigJson = process.env.REACT_APP_FIREBASE_CONFIG;
-    }
-    
+    } catch (e) {}
+
     if (envConfigJson) {
         firebaseConfig = JSON.parse(envConfigJson);
         appId = firebaseConfig.appId.split(':').pop() || 'default-app-id'; 
@@ -65,13 +64,14 @@ try {
         firebaseConfig = JSON.parse(__firebase_config);
         appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     } else {
-        // Nếu không có cả 2, dùng default
         firebaseConfig = DEFAULT_FIREBASE_CONFIG;
         appId = 'default-app-id';
-        // Chỉ báo lỗi nếu không phải môi trường dev cục bộ
-        if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
-             firebaseConfigError = "Cấu hình Firebase (REACT_APP_FIREBASE_CONFIG) chưa được thiết lập trên Vercel!";
-        }
+        // Kiểm tra xem có đang chạy trên môi trường có process không để báo lỗi
+        try {
+             if (process.env.NODE_ENV === 'production') {
+                 firebaseConfigError = "Cấu hình Firebase (REACT_APP_FIREBASE_CONFIG) chưa được thiết lập trên Vercel!";
+             }
+        } catch(e) {}
     }
 } catch (e) {
     firebaseConfigError = "Lỗi cú pháp JSON trong biến REACT_APP_FIREBASE_CONFIG.";
@@ -86,14 +86,15 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
 const db = getFirestore(app);
 
 // --- GEMINI API UTILS ---
-// Lấy API Key từ biến môi trường Vercel
 let apiKey = "";
-if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_GEMINI_API_KEY) {
-  apiKey = process.env.REACT_APP_GEMINI_API_KEY;
+// FIX: Lấy API Key bằng try-catch để đảm bảo hoạt động trên Vercel
+try {
+  apiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
+} catch (e) {
+  console.warn("Đang chạy trong môi trường không hỗ trợ process.env (Preview)");
 }
 
 const callGemini = async (prompt) => {
-  // FIX: Ném lỗi (Throw Error) thay vì trả về chuỗi để tránh lỗi JSON Parse bên dưới
   if (!apiKey) {
     console.error("Thiếu API Key Gemini!");
     throw new Error("Chưa cấu hình API Key (REACT_APP_GEMINI_API_KEY) hoặc chưa Redeploy trên Vercel.");
@@ -114,7 +115,7 @@ const callGemini = async (prompt) => {
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "Xin lỗi, AI đang bận.";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    throw error; // Ném lỗi ra để hàm gọi xử lý
+    throw error; 
   }
 };
 
@@ -162,7 +163,7 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
-// Component Xem trước ảnh (MỚI)
+// Component Xem trước ảnh
 const ImagePreviewModal = ({ src, onClose }) => {
   if (!src) return null;
   return (
