@@ -30,7 +30,7 @@ import {
   Save,
   List,
   Package,
-  Store // Icon Cửa hàng
+  Store
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -49,10 +49,11 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURATION ---
-const SHOP_LOGO_URL = "https://drive.google.com/uc?export=view&id=1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov"; 
+// Fix: Inline URL để tránh ReferenceError
+const DEFAULT_LOGO_URL = "https://drive.google.com/uc?export=view&id=1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov";
 
 const DEFAULT_FIREBASE_CONFIG = {
- apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
@@ -212,10 +213,13 @@ const Toast = ({ message, type = 'success', onClose }) => {
     return () => clearTimeout(timer);
   }, [onClose]);
 
+  // Fix: Đảm bảo message luôn là chuỗi
+  const displayMessage = typeof message === 'string' ? message : 'Có lỗi xảy ra';
+
   return (
     <div className={`fixed top-20 right-4 z-50 px-6 py-3 rounded-xl shadow-xl text-white font-medium flex items-center gap-3 animate-fade-in-down ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
       {type === 'error' ? <AlertCircle size={20}/> : <Check size={20}/>}
-      {message}
+      {displayMessage}
     </div>
   );
 };
@@ -377,15 +381,15 @@ const SidebarItem = ({ icon, label, active, onClick, visible = true }) => {
 
 const SettingsPanel = ({ categories, products, settings, onAddCategory, onDeleteCategory, onSaveProduct, onDeleteProduct, onSaveSettings }) => {
   const [newCat, setNewCat] = useState("");
-  // State cho form sản phẩm (dùng chung cho Thêm và Sửa)
   const [prodForm, setProdForm] = useState({ id: null, name: "", price: "", category: "", image: null, tag: "" });
   const [isEditing, setIsEditing] = useState(false);
-  // State cho cấu hình cửa hàng
-  const [shopSettings, setShopSettings] = useState({ logoUrl: "", shopName: "" });
+  // Fix: Đảm bảo giá trị khởi tạo không bị null/undefined
+  const [shopSettings, setShopSettings] = useState({ logoUrl: DEFAULT_LOGO_URL, shopName: "BanhKemMeo.vn" });
 
   useEffect(() => {
     if (settings) {
-      setShopSettings(settings);
+      // Fix: Merge với giá trị mặc định để tránh null
+      setShopSettings(prev => ({ ...prev, ...settings }));
     }
   }, [settings]);
 
@@ -400,8 +404,7 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
   const handleEditProduct = (product) => {
     setProdForm(product);
     setIsEditing(true);
-    // Scroll lên form
-    document.getElementById('product-form').scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('product-form')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const cancelEdit = () => {
@@ -412,7 +415,7 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
   const submitProduct = (e) => {
     e.preventDefault();
     onSaveProduct(prodForm);
-    cancelEdit(); // Reset form
+    cancelEdit();
   };
 
   const submitSettings = (e) => {
@@ -422,16 +425,17 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
 
   return (
     <div className="space-y-8 pb-10">
-      {/* 1. CẤU HÌNH CHUNG (LOGO, TÊN TIỆM) */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100">
         <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Store className="text-orange-500"/> Cài Đặt Cửa Hàng</h2>
         <form onSubmit={submitSettings} className="flex flex-col md:flex-row gap-4 items-end">
            <div className="flex-1 w-full">
              <label className="block text-sm font-medium text-gray-600 mb-1">Tên Tiệm</label>
+             {/* Fix: Đảm bảo value luôn là string */}
              <input className="w-full p-2 border rounded-lg" placeholder="VD: Bánh Kem Mèo" value={shopSettings.shopName || ""} onChange={e => setShopSettings({...shopSettings, shopName: e.target.value})} />
            </div>
            <div className="flex-1 w-full">
              <label className="block text-sm font-medium text-gray-600 mb-1">Link Logo (URL)</label>
+             {/* Fix: Đảm bảo value luôn là string */}
              <input className="w-full p-2 border rounded-lg" placeholder="https://..." value={shopSettings.logoUrl || ""} onChange={e => setShopSettings({...shopSettings, logoUrl: e.target.value})} />
            </div>
            <button type="submit" className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-700 whitespace-nowrap"><Save size={18} className="inline mr-2"/> Lưu Cấu Hình</button>
@@ -439,7 +443,6 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
         <p className="text-xs text-gray-400 mt-2">*Dán link ảnh trực tiếp (Google Drive, Imgur...) để thay logo.</p>
       </div>
 
-      {/* 2. QUẢN LÝ DANH MỤC */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100">
         <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><List className="text-blue-500"/> Quản Lý Danh Mục</h2>
         <div className="flex gap-2 mb-4 max-w-md">
@@ -455,11 +458,9 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
         </div>
       </div>
 
-      {/* 3. QUẢN LÝ SẢN PHẨM */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100" id="product-form">
         <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Package className="text-green-500"/> Quản Lý Sản Phẩm</h2>
         
-        {/* Form Thêm/Sửa */}
         <form onSubmit={submitProduct} className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 p-6 rounded-xl border ${isEditing ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-100'}`}>
           <div className="md:col-span-2 font-bold text-gray-700 mb-2 flex justify-between">
              <span>{isEditing ? `Đang sửa món: ${prodForm.name}` : 'Thêm món mới'}</span>
@@ -497,7 +498,6 @@ const SettingsPanel = ({ categories, products, settings, onAddCategory, onDelete
           </button>
         </form>
 
-        {/* Danh Sách Sản Phẩm */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {products.map(prod => (
             <div key={prod.id} className="border border-gray-200 rounded-xl p-3 relative group hover:shadow-md transition bg-white">
@@ -561,12 +561,6 @@ const CreateOrderForm = ({ categories = [], onSubmit }) => {
   );
 };
 
-const AuthScreen = ({ type, onSwitch, onSubmit }) => {
-  const [formData, setFormData] = useState({ name: '', phone: '', password: '' });
-  const handleSubmit = (e) => { e.preventDefault(); if (type === 'login') onSubmit(formData.phone, formData.password); else onSubmit(formData.name, formData.phone, formData.password); };
-  return (<div className="w-full"><form onSubmit={handleSubmit} className="space-y-4">{type === 'register' && <div><label className="block text-sm font-medium mb-1">Họ Tên</label><input required className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}/></div>}<div><label className="block text-sm font-medium mb-1">Số Điện Thoại</label><input required type="tel" className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})}/></div><div><label className="block text-sm font-medium mb-1">Mật Khẩu</label><input required type="password" className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})}/></div><button type="submit" className="w-full bg-orange-600 text-white font-bold py-3 rounded-lg hover:bg-orange-700 transition">{type === 'login' ? 'Đăng Nhập' : 'Đăng Ký'}</button></form><div className="mt-6 text-center"><button onClick={onSwitch} className="text-orange-600 hover:underline text-sm">{type === 'login' ? 'Đăng ký tài khoản mới' : 'Đã có tài khoản? Đăng nhập'}</button></div></div>);
-};
-
 const OrderList = ({ orders }) => {
   const [selectedOrderForZalo, setSelectedOrderForZalo] = useState(null);
   const [viewImage, setViewImage] = useState(null);
@@ -622,7 +616,8 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [shopSettings, setShopSettings] = useState({ logoUrl: SHOP_LOGO_URL, shopName: "BanhKemMeo.vn" });
+  // Fix: Khởi tạo giá trị mặc định cho shopSettings
+  const [shopSettings, setShopSettings] = useState({ logoUrl: DEFAULT_LOGO_URL, shopName: "BanhKemMeo.vn" });
   
   const [view, setView] = useState('landing'); 
   const [activeTab, setActiveTab] = useState('create-order'); 
@@ -674,7 +669,10 @@ export default function App() {
     // Settings Sync
     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
     const unsubSettings = onSnapshot(settingsRef, (doc) => {
-        if (doc.exists()) setShopSettings(doc.data());
+        // Fix: Chỉ update state nếu có data, nếu không giữ giá trị mặc định
+        if (doc.exists()) {
+             setShopSettings(prev => ({ ...prev, ...doc.data() }));
+        }
     });
 
     const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
