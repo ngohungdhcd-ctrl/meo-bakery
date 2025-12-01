@@ -25,11 +25,12 @@ import {
   Phone,
   Clock,
   Heart,
-  Settings,     // Icon Cài đặt
-  Edit,         // Icon Sửa
-  Save,         // Icon Lưu
-  List,         // Icon Danh sách
-  Package       // Icon Sản phẩm
+  Settings,
+  Edit,
+  Save,
+  List,
+  Package,
+  Store // Icon Cửa hàng
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -51,7 +52,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 const SHOP_LOGO_URL = "https://drive.google.com/uc?export=view&id=1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov"; 
 
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
+ apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
   storageBucket: "meo-bakery-4c04f.firebasestorage.app",
@@ -152,7 +153,6 @@ const OWNER_PHONE = '0868679094';
 
 // --- HELPER FUNCTIONS ---
 
-// Hàm nén ảnh client-side để giảm dung lượng
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -162,7 +162,7 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Giảm xuống 800px để tối ưu storage
+        const MAX_WIDTH = 800; 
         let width = img.width;
         let height = img.height;
 
@@ -177,7 +177,6 @@ const compressImage = (file) => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Nén thành JPEG chất lượng 70%
         resolve(canvas.toDataURL('image/jpeg', 0.7));
       };
     };
@@ -186,11 +185,11 @@ const compressImage = (file) => {
 
 // --- HELPER COMPONENTS ---
 
-const Logo = ({ className }) => (
+const Logo = ({ className, customUrl }) => (
   <div className={`flex items-center gap-3 font-bold text-2xl text-orange-600 ${className}`} style={{ fontFamily: 'Quicksand, sans-serif' }}>
-    {SHOP_LOGO_URL ? (
+    {customUrl ? (
       <img 
-        src={SHOP_LOGO_URL} 
+        src={customUrl} 
         alt="Logo" 
         className="h-12 w-auto object-contain" 
         onError={(e) => {
@@ -238,472 +237,285 @@ const ImagePreviewModal = ({ src, onClose }) => {
   );
 };
 
-// --- MAIN APP COMPONENT ---
+// --- SUB COMPONENTS (MODALS) ---
 
-export default function App() {
-  const [user, setFirebaseUser] = useState(null); 
-  const [appUser, setAppUser] = useState(null); 
-  
-  // Data States
-  const [usersList, setUsersList] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  
-  const [view, setView] = useState('landing'); // landing, login, register, dashboard
-  const [activeTab, setActiveTab] = useState('create-order'); 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toast, setToast] = useState(null);
+const AIConsultantModal = ({ isOpen, onClose, onApply }) => {
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
 
-  const showToast = (message, type = 'success') => setToast({ message, type });
+  if (!isOpen) return null;
 
-  // Inject Font Quicksand
-  useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-    return () => document.head.removeChild(link);
-  }, []);
+  const handleConsult = async () => {
+    if (!prompt.trim()) return;
+    setLoading(true);
+    setResult(null);
 
-  // --- FIREBASE LOGIC ---
-  if (firebaseConfigError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4 font-sans">
-        <div className="bg-white border-4 border-red-500 p-8 rounded-xl shadow-2xl max-w-lg text-center">
-          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-red-700 mb-4">LỖI CẤU HÌNH</h1>
-          <p className="text-gray-700 font-medium mb-6">{firebaseConfigError}</p>
-        </div>
-      </div>
-    );
-  }
+    const systemPrompt = `
+      Bạn là một trợ lý ảo am hiểu về bánh kem tại tiệm "Bánh Kem Mèo".
+      Người dùng sẽ mô tả nhu cầu. Hãy gợi ý đơn hàng JSON.
+      Các loại bánh có sẵn: "Bánh Kem Sữa Tươi", "Bánh Mousse", "Bánh Tiramisu", "Bánh Bắp", "Bánh Bông Lan Trứng Muối", "Khác".
+      JSON output format: { "cakeType": "...", "requests": "...", "message": "..." }
+    `;
 
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (initialAuthToken) {
-          await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("Auth Error:", e);
-      }
-    };
-    initAuth();
-    
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setFirebaseUser(u);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch Data
-  useEffect(() => {
-    // Luôn fetch Products và Categories (cho cả khách và nhân viên)
-    const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
-    const unsubProducts = onSnapshot(productsRef, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(list);
-    });
-
-    const categoriesRef = collection(db, 'artifacts', appId, 'public', 'data', 'categories');
-    const unsubCategories = onSnapshot(categoriesRef, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setCategories(list);
-    });
-
-    if (!user) return () => { unsubProducts(); unsubCategories(); };
-
-    // Users Sync (Authenticated)
-    const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
-    const unsubUsers = onSnapshot(usersRef, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsersList(list);
-      
-      const savedPhone = localStorage.getItem('bkm_phone');
-      if (savedPhone) {
-        const found = list.find(u => u.phone === savedPhone);
-        if (found) {
-          setAppUser(found);
-          if (view === 'login') {
-             setView('dashboard');
-             if (found.role === ROLES.BAKER) setActiveTab('orders');
-          }
-        }
-      }
-    });
-
-    // Orders Sync (Authenticated)
-    const ordersRef = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-    const unsubOrders = onSnapshot(ordersRef, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setOrders(list);
-    });
-
-    return () => {
-      unsubUsers();
-      unsubOrders();
-      unsubProducts();
-      unsubCategories();
-    };
-  }, [user, view]);
-
-  // --- ACTIONS ---
-  const handleLogin = (phone, password) => {
-    const targetUser = usersList.find(u => u.phone === phone);
-    if (targetUser && targetUser.password === password) {
-      setAppUser(targetUser);
-      localStorage.setItem('bkm_phone', phone);
-      setView('dashboard');
-      if (targetUser.role === ROLES.BAKER) setActiveTab('orders');
-      else setActiveTab('create-order');
-      showToast(`Xin chào ${targetUser.name}!`);
-    } else {
-      showToast('Sai số điện thoại hoặc mật khẩu!', 'error');
-    }
-  };
-
-  const handleRegister = async (name, phone, password) => {
-    if (usersList.find(u => u.phone === phone)) {
-      showToast('Số điện thoại này đã được đăng ký!', 'error');
-      return;
-    }
-    const isOwner = phone === OWNER_PHONE;
-    const newUser = {
-      name, phone, password, 
-      role: isOwner ? ROLES.OWNER : ROLES.PENDING,
-      createdAt: new Date().toISOString()
-    };
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), newUser);
-      showToast('Đăng ký thành công! Hãy đăng nhập.');
-      setView('login');
+      const fullPrompt = `${systemPrompt}\n\nYêu cầu của khách: "${prompt}"`;
+      const textResponse = await callGemini(fullPrompt);
+      const jsonStr = textResponse.replace(/```json|```/g, '').trim();
+      const parsedData = JSON.parse(jsonStr);
+      setResult(parsedData);
     } catch (e) {
+      alert("AI không hiểu yêu cầu hoặc API Key bị thiếu/lỗi trên Vercel. Vui lòng kiểm tra lại.");
       console.error(e);
-      showToast('Lỗi khi đăng ký', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    setAppUser(null);
-    localStorage.removeItem('bkm_phone');
-    setView('landing'); 
-  };
-
-  const handleCreateOrder = async (orderData) => {
-    try {
-      const newOrder = {
-        ...orderData,
-        createdBy: appUser.name,
-        createdAt: new Date().toISOString(),
-        status: 'new',
-        orderId: Date.now().toString().slice(-6)
-      };
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), newOrder);
-      showToast('Tạo đơn thành công!');
-      setActiveTab('orders');
-    } catch (e) {
-      console.error(e);
-      if (e.code === 'resource-exhausted') {
-        showToast('Lỗi: Tổng dung lượng ảnh quá lớn! Vui lòng giảm số lượng ảnh.', 'error');
-      } else {
-        showToast('Lỗi: ' + e.message, 'error');
-      }
-    }
-  };
-
-  const handleUpdateRole = async (phone, newRole) => {
-    try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), { role: newRole });
-      showToast('Đã cập nhật quyền hạn');
-    } catch (e) {
-      showToast('Lỗi cập nhật', 'error');
-    }
-  };
-
-  // --- SETTINGS ACTIONS (CATEGORY & PRODUCT) ---
-  const handleAddCategory = async (name) => {
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'categories'), { name });
-      showToast('Thêm danh mục thành công!');
-    } catch (e) { showToast('Lỗi thêm danh mục', 'error'); }
-  };
-
-  const handleDeleteCategory = async (id) => {
-    if(!window.confirm("Xóa danh mục này?")) return;
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', id));
-      showToast('Đã xóa danh mục');
-    } catch (e) { showToast('Lỗi xóa danh mục', 'error'); }
-  };
-
-  const handleAddProduct = async (productData) => {
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), productData);
-      showToast('Thêm sản phẩm thành công!');
-    } catch (e) { showToast('Lỗi thêm sản phẩm (Ảnh quá lớn?)', 'error'); }
-  };
-
-  const handleDeleteProduct = async (id) => {
-    if(!window.confirm("Xóa sản phẩm này?")) return;
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
-      showToast('Đã xóa sản phẩm');
-    } catch (e) { showToast('Lỗi xóa sản phẩm', 'error'); }
-  };
-
-  const goToDashboard = () => {
-      if (appUser) setView('dashboard');
-      else setView('login');
-  };
-
-  // --- VIEWS ---
-
-  if (view === 'loading') return <div className="h-screen flex items-center justify-center text-orange-500 font-sans"><Loader className="animate-spin" size={40}/></div>;
-
-  // LANDING PAGE VIEW
-  if (view === 'landing') {
-      return (
-        <div className="min-h-screen bg-orange-50/30 font-sans flex flex-col" style={{ fontFamily: 'Quicksand, sans-serif' }}>
-            {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-            
-            {/* Navbar */}
-            <header className="bg-white shadow-sm sticky top-0 z-40 px-4 md:px-8 h-20 flex justify-between items-center transition-all duration-300">
-                <Logo />
-                <nav className="hidden md:flex items-center gap-8 text-gray-600 font-bold text-lg">
-                    <button onClick={() => setView('landing')} className="hover:text-orange-600 transition-colors">Trang Chủ</button>
-                    <a href="#products" className="hover:text-orange-600 transition-colors">Sản Phẩm</a>
-                    <a href="#about" className="hover:text-orange-600 transition-colors">Về Chúng Tôi</a>
-                </nav>
-                <button onClick={goToDashboard} className="hidden md:flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-full font-bold shadow-lg transform hover:-translate-y-0.5 transition-all">
-                    <Users size={18} /><span>Dành Cho Nhân Viên</span>
-                </button>
-                <button className="md:hidden text-gray-600" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}><Menu size={28} /></button>
-            </header>
-
-            {/* Mobile Nav Overlay */}
-            {mobileMenuOpen && (
-                <div className="fixed inset-0 z-50 bg-white p-6 animate-fade-in-up md:hidden flex flex-col">
-                    <div className="flex justify-between items-center mb-8">
-                        <Logo />
-                        <button onClick={() => setMobileMenuOpen(false)}><X size={28} className="text-gray-500"/></button>
-                    </div>
-                    <div className="flex flex-col gap-6 text-xl font-bold text-gray-700">
-                        <button onClick={() => { setView('landing'); setMobileMenuOpen(false); }}>Trang Chủ</button>
-                        <a href="#products" onClick={() => setMobileMenuOpen(false)}>Sản Phẩm</a>
-                        <button onClick={() => { goToDashboard(); setMobileMenuOpen(false); }} className="text-orange-600 flex items-center gap-2"><Users size={20}/> Dành Cho Nhân Viên</button>
-                    </div>
-                </div>
-            )}
-
-            {/* Banner */}
-            <div className="bg-gradient-to-br from-orange-400 to-red-500 text-white py-16 md:py-24 px-6 text-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-black/10"></div>
-                <div className="relative z-10 max-w-3xl mx-auto">
-                    <h1 className="text-4xl md:text-6xl font-bold mb-6 drop-shadow-lg leading-tight">Hương Vị Ngọt Ngào <br/> Trao Gửi Yêu Thương</h1>
-                    <p className="text-lg md:text-xl opacity-90 mb-8 max-w-xl mx-auto font-medium">Chuyên các loại bánh kem sinh nhật, sự kiện với nguyên liệu tươi ngon nhất, thiết kế độc đáo theo yêu cầu của bạn.</p>
-                    <a href="#products" className="inline-block bg-white text-orange-600 px-8 py-3 rounded-full font-bold text-lg shadow-xl hover:shadow-2xl hover:bg-orange-50 transition-all transform hover:scale-105">Xem Menu Ngay</a>
-                </div>
-            </div>
-
-            {/* Product Showcase (Dynamic from Firestore) */}
-            <main id="products" className="flex-1 max-w-7xl mx-auto p-6 md:p-12 w-full">
-                <div className="text-center mb-12">
-                    <h2 className="text-3xl font-bold text-gray-800 mb-2">Sản Phẩm Nổi Bật</h2>
-                    <div className="w-20 h-1 bg-orange-500 mx-auto rounded-full"></div>
-                </div>
-
-                {products.length === 0 ? (
-                    <div className="text-center py-10 text-gray-500">Chưa có sản phẩm nào được trưng bày.</div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                        {products.map(product => (
-                            <div key={product.id} className="bg-white rounded-2xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group border border-orange-100 flex flex-col h-full">
-                                <div className="relative pt-[100%] overflow-hidden bg-gray-100">
-                                    <img 
-                                        src={product.image || "https://via.placeholder.com/300?text=No+Image"} 
-                                        alt={product.name} 
-                                        className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                    />
-                                    {product.tag && (
-                                        <span className="absolute top-3 left-3 bg-red-500/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">{product.tag}</span>
-                                    )}
-                                </div>
-                                <div className="p-5 flex-1 flex flex-col">
-                                    <h3 className="font-bold text-lg text-gray-800 mb-2 group-hover:text-orange-600 transition-colors line-clamp-1">{product.name}</h3>
-                                    <div className="mt-auto flex items-center justify-between border-t border-dashed border-gray-200 pt-3">
-                                        <span className="text-orange-600 font-extrabold text-lg">{Number(product.price).toLocaleString()} đ</span>
-                                        <button className="bg-orange-100 text-orange-600 p-2 rounded-full hover:bg-orange-600 hover:text-white transition-colors"><ShoppingCart size={18} /></button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </main>
-            
-            {/* Footer */}
-            <footer className="bg-gray-900 text-gray-300 py-12 px-6">
-                <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div>
-                        <div className="flex items-center gap-2 font-bold text-2xl text-white mb-4"><div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-white"><Cake size={18} /></div>BanhKemMeo.vn</div>
-                        <p className="text-gray-400 mb-4">Nơi biến những ý tưởng ngọt ngào thành hiện thực.</p>
-                    </div>
-                    <div>
-                        <h3 className="text-white font-bold text-lg mb-4">Liên Hệ</h3>
-                        <ul className="space-y-3">
-                            <li className="flex items-center gap-3"><MapPin size={18} className="text-orange-500"/> 123 Đường Bánh Ngọt, TP.HCM</li>
-                            <li className="flex items-center gap-3"><Phone size={18} className="text-orange-500"/> 0868.679.094</li>
-                        </ul>
-                    </div>
-                </div>
-                <div className="border-t border-gray-800 mt-10 pt-6 text-center text-sm text-gray-500">© 2024 BanhKemMeo.vn. All rights reserved.</div>
-            </footer>
-        </div>
-      );
-  }
-
-  // LOGIN / REGISTER
-  if (view === 'login' || view === 'register') {
-    return (
-      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 relative font-sans" style={{ fontFamily: 'Quicksand, sans-serif' }}>
-        <button onClick={() => setView('landing')} className="absolute top-6 left-6 flex items-center gap-2 text-gray-600 hover:text-orange-600 font-medium transition bg-white px-4 py-2 rounded-full shadow-sm">
-            <HomeIcon size={20}/> Về Trang Chủ
-        </button>
-        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-        <div className="bg-white w-full max-w-md p-8 md:p-10 rounded-3xl shadow-2xl border border-orange-100">
-            <div className="text-center mb-8"><Logo className="justify-center mb-2" /><h2 className="text-gray-500 text-sm">Hệ thống quản lý nội bộ</h2></div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">{view === 'login' ? 'Đăng Nhập Nhân Viên' : 'Đăng Ký Tài Khoản'}</h1>
-            {view === 'login' ? <AuthScreen type="login" onSwitch={() => setView('register')} onSubmit={handleLogin} /> : <AuthScreen type="register" onSwitch={() => setView('login')} onSubmit={handleRegister} />}
-        </div>
-      </div>
-    );
-  }
-
-  // DASHBOARD LAYOUT
   return (
-    <div className="min-h-screen bg-orange-50 text-gray-800 flex flex-col md:flex-row font-sans" style={{ fontFamily: 'Quicksand, sans-serif' }}>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-orange-100 h-screen sticky top-0 shadow-sm z-20">
-        <div className="p-6 border-b border-orange-100 cursor-pointer" onClick={() => setView('landing')}><Logo /></div>
-        <nav className="flex-1 p-4 space-y-2">
-          <SidebarItem icon={<PlusCircle size={20}/>} label="Tạo Đơn Bánh" active={activeTab === 'create-order'} onClick={() => setActiveTab('create-order')} visible={appUser?.role !== ROLES.BAKER} />
-          <SidebarItem icon={<ClipboardList size={20}/>} label="Danh Sách Đơn" active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} />
-          <SidebarItem icon={<Users size={20}/>} label="Nhân Sự" active={activeTab === 'users'} onClick={() => setActiveTab('users')} visible={appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER} />
-          <SidebarItem icon={<Settings size={20}/>} label="Cài Đặt SP" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} visible={appUser?.role === ROLES.OWNER} />
-        </nav>
-        <div className="p-4 border-t border-orange-100 bg-orange-50/50">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-orange-200 flex items-center justify-center text-orange-700 font-bold">{appUser?.name?.charAt(0)}</div>
-            <div className="overflow-hidden"><p className="font-medium truncate">{appUser?.name}</p><p className="text-xs text-gray-500 uppercase">{ROLE_LABELS[appUser?.role]}</p></div>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in-up">
+        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 text-white flex justify-between items-center">
+          <div className="flex items-center gap-2 font-bold text-lg">
+            <Sparkles className="text-yellow-300" /> Trợ Lý Mèo AI
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-medium w-full p-2 rounded-lg hover:bg-red-50 transition-colors"><LogOut size={16} /> Thoát</button>
+          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full"><X size={20}/></button>
         </div>
-      </aside>
-      {/* Mobile Header Dashboard */}
-      <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-20">
-        <Logo />
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-orange-600"><Menu /></button>
+        <div className="p-6">
+          {!result ? (
+            <>
+              <p className="text-gray-600 mb-4 text-sm">Nhập yêu cầu khách hàng...</p>
+              <textarea 
+                className="w-full border border-purple-200 rounded-xl p-3 h-28 focus:ring-2 focus:ring-purple-500 outline-none text-gray-700 bg-purple-50"
+                placeholder="VD: Sinh nhật bé trai 5 tuổi, thích siêu nhân..."
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+              />
+              <button 
+                onClick={handleConsult}
+                disabled={loading || !prompt}
+                className="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition disabled:opacity-50"
+              >
+                {loading ? <Loader className="animate-spin" /> : <Sparkles size={18} />}
+                {loading ? 'Đang suy nghĩ...' : 'Hỏi Ý Kiến AI'}
+              </button>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                <h3 className="font-bold text-green-800 text-sm mb-2 uppercase">Gợi ý từ AI:</h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p><strong>Loại bánh:</strong> {result.cakeType}</p>
+                  <p><strong>Chi tiết:</strong> {result.requests}</p>
+                  <p><strong>Lời chúc:</strong> "{result.message}"</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setResult(null)} className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">Thử lại</button>
+                <button onClick={() => { onApply(result); onClose(); }} className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">Áp dụng</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      {/* Mobile Menu Dashboard */}
-      {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-30 bg-white pt-20 px-6 animate-fade-in-up">
-          <button onClick={() => setMobileMenuOpen(false)} className="absolute top-4 right-4 text-gray-500"><X size={24}/></button>
-          <nav className="space-y-4 text-lg">
-             <button onClick={() => { setView('landing'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium text-gray-500">Về Trang Chủ</button>
-             {appUser?.role !== ROLES.BAKER && <button onClick={() => { setActiveTab('create-order'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Tạo Đơn Bánh</button>}
-             <button onClick={() => { setActiveTab('orders'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Danh Sách Đơn</button>
-             {(appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER) && <button onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Quản Lý Nhân Sự</button>}
-             {appUser?.role === ROLES.OWNER && <button onClick={() => { setActiveTab('settings'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b border-orange-100 font-medium">Cài Đặt SP</button>}
-             <button onClick={handleLogout} className="block w-full text-left py-3 text-red-500 mt-4 font-bold">Đăng xuất</button>
-          </nav>
-        </div>
-      )}
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-        <div className="max-w-6xl mx-auto">
-          {activeTab === 'create-order' && <CreateOrderForm categories={categories} onSubmit={handleCreateOrder} />}
-          {activeTab === 'orders' && <OrderList orders={orders} />}
-          {activeTab === 'users' && <UserManagement users={usersList} currentUser={appUser} onUpdateRole={handleUpdateRole} />}
-          {activeTab === 'settings' && <SettingsPanel categories={categories} products={products} onAddCategory={handleAddCategory} onDeleteCategory={handleDeleteCategory} onAddProduct={handleAddProduct} onDeleteProduct={handleDeleteProduct} />}
-        </div>
-      </main>
     </div>
   );
-}
+};
 
-// --- SUB COMPONENTS (UNCHANGED - except CreateOrderForm update) ---
+const GenerateZaloModal = ({ order, onClose }) => {
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const generate = async () => {
+      const prompt = `Viết tin nhắn Zalo xác nhận đơn hàng bánh kem:\nKhách: ${order.customerName}\nLoại: ${order.cakeType}\nLấy: ${new Date(order.pickupTime).toLocaleString('vi-VN')}\nTiền: ${order.total}\nCọc: ${order.deposit}\nCòn: ${order.total - order.deposit}`;
+      const res = await callGemini(prompt);
+      setMessage(res);
+      setLoading(false);
+    };
+    generate();
+  }, [order]);
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(message);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg shadow-xl animate-fade-in-up">
+        <div className="bg-blue-600 p-4 rounded-t-xl text-white flex justify-between items-center">
+          <div className="flex items-center gap-2 font-bold"><MessageCircle size={20} /> Soạn Tin Nhắn Zalo</div>
+          <button onClick={onClose}><X size={20}/></button>
+        </div>
+        <div className="p-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-8 text-gray-500 gap-2"><Loader className="animate-spin text-blue-600" size={32} /><p>AI đang viết tin nhắn...</p></div>
+          ) : (
+            <>
+              <textarea className="w-full h-48 p-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" value={message} onChange={(e) => setMessage(e.target.value)}/>
+              <div className="mt-4 flex justify-end gap-2">
+                <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Đóng</button>
+                <button onClick={copyToClipboard} className={`px-4 py-2 rounded-lg flex items-center gap-2 text-white transition ${copied ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}>{copied ? <Check size={18}/> : <Copy size={18}/>} {copied ? 'Đã Copy' : 'Copy Tin'}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- OTHER COMPONENTS ---
 
 const SidebarItem = ({ icon, label, active, onClick, visible = true }) => {
   if (!visible) return null;
   return (<button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium ${active ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'text-gray-600 hover:bg-orange-100 hover:text-orange-700'}`}>{icon}<span>{label}</span></button>);
 };
 
-// Settings Panel for Owner
-const SettingsPanel = ({ categories, products, onAddCategory, onDeleteCategory, onAddProduct, onDeleteProduct }) => {
+const SettingsPanel = ({ categories, products, settings, onAddCategory, onDeleteCategory, onSaveProduct, onDeleteProduct, onSaveSettings }) => {
   const [newCat, setNewCat] = useState("");
-  const [newProd, setNewProd] = useState({ name: "", price: "", category: "", image: null, tag: "" });
+  // State cho form sản phẩm (dùng chung cho Thêm và Sửa)
+  const [prodForm, setProdForm] = useState({ id: null, name: "", price: "", category: "", image: null, tag: "" });
+  const [isEditing, setIsEditing] = useState(false);
+  // State cho cấu hình cửa hàng
+  const [shopSettings, setShopSettings] = useState({ logoUrl: "", shopName: "" });
+
+  useEffect(() => {
+    if (settings) {
+      setShopSettings(settings);
+    }
+  }, [settings]);
 
   const handleProductImage = async (e) => {
     const file = e.target.files[0];
     if (file) {
       const compressed = await compressImage(file);
-      setNewProd({...newProd, image: compressed});
+      setProdForm({...prodForm, image: compressed});
     }
+  };
+
+  const handleEditProduct = (product) => {
+    setProdForm(product);
+    setIsEditing(true);
+    // Scroll lên form
+    document.getElementById('product-form').scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setProdForm({ id: null, name: "", price: "", category: "", image: null, tag: "" });
+    setIsEditing(false);
   };
 
   const submitProduct = (e) => {
     e.preventDefault();
-    onAddProduct(newProd);
-    setNewProd({ name: "", price: "", category: "", image: null, tag: "" });
+    onSaveProduct(prodForm);
+    cancelEdit(); // Reset form
+  };
+
+  const submitSettings = (e) => {
+    e.preventDefault();
+    onSaveSettings(shopSettings);
   };
 
   return (
-    <div className="space-y-8">
-      {/* Quản lý Danh mục */}
+    <div className="space-y-8 pb-10">
+      {/* 1. CẤU HÌNH CHUNG (LOGO, TÊN TIỆM) */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100">
-        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><List/> Quản Lý Danh Mục</h2>
-        <div className="flex gap-2 mb-4">
+        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Store className="text-orange-500"/> Cài Đặt Cửa Hàng</h2>
+        <form onSubmit={submitSettings} className="flex flex-col md:flex-row gap-4 items-end">
+           <div className="flex-1 w-full">
+             <label className="block text-sm font-medium text-gray-600 mb-1">Tên Tiệm</label>
+             <input className="w-full p-2 border rounded-lg" placeholder="VD: Bánh Kem Mèo" value={shopSettings.shopName || ""} onChange={e => setShopSettings({...shopSettings, shopName: e.target.value})} />
+           </div>
+           <div className="flex-1 w-full">
+             <label className="block text-sm font-medium text-gray-600 mb-1">Link Logo (URL)</label>
+             <input className="w-full p-2 border rounded-lg" placeholder="https://..." value={shopSettings.logoUrl || ""} onChange={e => setShopSettings({...shopSettings, logoUrl: e.target.value})} />
+           </div>
+           <button type="submit" className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-700 whitespace-nowrap"><Save size={18} className="inline mr-2"/> Lưu Cấu Hình</button>
+        </form>
+        <p className="text-xs text-gray-400 mt-2">*Dán link ảnh trực tiếp (Google Drive, Imgur...) để thay logo.</p>
+      </div>
+
+      {/* 2. QUẢN LÝ DANH MỤC */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100">
+        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><List className="text-blue-500"/> Quản Lý Danh Mục</h2>
+        <div className="flex gap-2 mb-4 max-w-md">
           <input className="flex-1 p-2 border rounded-lg" placeholder="Tên danh mục mới..." value={newCat} onChange={e => setNewCat(e.target.value)}/>
-          <button onClick={() => {onAddCategory(newCat); setNewCat("");}} className="bg-orange-500 text-white px-4 py-2 rounded-lg">Thêm</button>
+          <button onClick={() => {onAddCategory(newCat); setNewCat("");}} className="bg-blue-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-600">Thêm</button>
         </div>
         <div className="flex flex-wrap gap-2">
           {categories.map(cat => (
-            <span key={cat.id} className="bg-gray-100 px-3 py-1 rounded-full flex items-center gap-2 text-sm">
-              {cat.name} <button onClick={() => onDeleteCategory(cat.id)} className="text-red-500 hover:text-red-700"><X size={14}/></button>
+            <span key={cat.id} className="bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm font-medium text-gray-700">
+              {cat.name} <button onClick={() => onDeleteCategory(cat.id)} className="text-red-400 hover:text-red-600 bg-white rounded-full p-0.5"><X size={14}/></button>
             </span>
           ))}
         </div>
       </div>
 
-      {/* Quản lý Sản phẩm */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100">
-        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Package/> Quản Lý Sản Phẩm (Trưng bày)</h2>
-        <form onSubmit={submitProduct} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-gray-50 p-4 rounded-lg">
-          <input required className="p-2 border rounded" placeholder="Tên bánh" value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})}/>
-          <input required type="number" className="p-2 border rounded" placeholder="Giá bán (VNĐ)" value={newProd.price} onChange={e => setNewProd({...newProd, price: e.target.value})}/>
-          <select className="p-2 border rounded" value={newProd.category} onChange={e => setNewProd({...newProd, category: e.target.value})}>
-            <option value="">-- Chọn Danh Mục --</option>
-            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-          <input className="p-2 border rounded" placeholder="Tag (VD: Hot, Mới)" value={newProd.tag} onChange={e => setNewProd({...newProd, tag: e.target.value})}/>
-          <div className="md:col-span-2">
-             <label className="block text-sm font-medium mb-1">Ảnh sản phẩm</label>
-             <input type="file" accept="image/*" onChange={handleProductImage} />
+      {/* 3. QUẢN LÝ SẢN PHẨM */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-100" id="product-form">
+        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Package className="text-green-500"/> Quản Lý Sản Phẩm</h2>
+        
+        {/* Form Thêm/Sửa */}
+        <form onSubmit={submitProduct} className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 p-6 rounded-xl border ${isEditing ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-100'}`}>
+          <div className="md:col-span-2 font-bold text-gray-700 mb-2 flex justify-between">
+             <span>{isEditing ? `Đang sửa món: ${prodForm.name}` : 'Thêm món mới'}</span>
+             {isEditing && <button type="button" onClick={cancelEdit} className="text-sm text-red-500 underline">Hủy sửa</button>}
           </div>
-          <button type="submit" className="md:col-span-2 bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700">Lưu Sản Phẩm</button>
+
+          <div>
+             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tên Bánh</label>
+             <input required className="w-full p-2 border rounded-lg" placeholder="VD: Bánh Kem Dâu" value={prodForm.name} onChange={e => setProdForm({...prodForm, name: e.target.value})}/>
+          </div>
+          <div>
+             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Giá Bán</label>
+             <input required type="number" className="w-full p-2 border rounded-lg" placeholder="VD: 350000" value={prodForm.price} onChange={e => setProdForm({...prodForm, price: e.target.value})}/>
+          </div>
+          <div>
+             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Danh Mục</label>
+             <select className="w-full p-2 border rounded-lg" value={prodForm.category} onChange={e => setProdForm({...prodForm, category: e.target.value})}>
+                <option value="">-- Chọn --</option>
+                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+             </select>
+          </div>
+          <div>
+             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tag (Optional)</label>
+             <input className="w-full p-2 border rounded-lg" placeholder="VD: Hot, Mới, Best Seller" value={prodForm.tag} onChange={e => setProdForm({...prodForm, tag: e.target.value})}/>
+          </div>
+          <div className="md:col-span-2">
+             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Hình Ảnh</label>
+             <div className="flex items-center gap-4">
+                <input type="file" accept="image/*" onChange={handleProductImage} className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"/>
+                {prodForm.image && <img src={prodForm.image} alt="Preview" className="h-12 w-12 object-cover rounded border"/>}
+             </div>
+          </div>
+          <button type="submit" className={`md:col-span-2 py-3 rounded-lg font-bold text-white shadow-md transition ${isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'}`}>
+            {isEditing ? 'Cập Nhật Sản Phẩm' : 'Thêm Sản Phẩm Mới'}
+          </button>
         </form>
 
+        {/* Danh Sách Sản Phẩm */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {products.map(prod => (
-            <div key={prod.id} className="border rounded-lg p-3 relative group">
-              <img src={prod.image || "https://via.placeholder.com/150"} className="w-full h-32 object-cover rounded mb-2" alt={prod.name}/>
-              <h4 className="font-bold truncate">{prod.name}</h4>
-              <p className="text-orange-600 font-bold">{Number(prod.price).toLocaleString()} đ</p>
-              <span className="text-xs bg-gray-200 px-2 py-1 rounded">{prod.category || "Khác"}</span>
-              <button onClick={() => onDeleteProduct(prod.id)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition"><Trash2 size={16}/></button>
+            <div key={prod.id} className="border border-gray-200 rounded-xl p-3 relative group hover:shadow-md transition bg-white">
+              <div className="relative h-40 mb-3 overflow-hidden rounded-lg bg-gray-100">
+                 <img src={prod.image || "https://via.placeholder.com/150?text=No+Image"} className="w-full h-full object-cover" alt={prod.name}/>
+                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                    <button onClick={() => handleEditProduct(prod)} className="bg-white text-blue-600 p-2 rounded-full hover:bg-blue-50"><Edit size={18}/></button>
+                    <button onClick={() => onDeleteProduct(prod.id)} className="bg-white text-red-600 p-2 rounded-full hover:bg-red-50"><Trash2 size={18}/></button>
+                 </div>
+              </div>
+              <h4 className="font-bold text-gray-800 truncate" title={prod.name}>{prod.name}</h4>
+              <div className="flex justify-between items-end mt-1">
+                  <div>
+                      <p className="text-orange-600 font-bold text-sm">{Number(prod.price).toLocaleString()} đ</p>
+                      <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded uppercase tracking-wider">{prod.category || "Khác"}</span>
+                  </div>
+                  {prod.tag && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">{prod.tag}</span>}
+              </div>
             </div>
           ))}
         </div>
@@ -733,7 +545,6 @@ const CreateOrderForm = ({ categories = [], onSubmit }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4"><h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Khách Hàng</h3><div><label className="text-sm font-medium">Tên khách</label><input required className={inputClass} value={form.customerName} onChange={e => setForm({...form, customerName: e.target.value})} /></div><div><label className="text-sm font-medium">SĐT</label><input required className={inputClass} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div><div className="md:col-span-2"><label className="text-sm font-medium">Địa chỉ</label><input className={inputClass} value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div><div><label className="text-sm font-medium">Giờ lấy</label><input required type="datetime-local" className={inputClass} value={form.pickupTime} onChange={e => setForm({...form, pickupTime: e.target.value})} /></div></div>
           <div className="space-y-4"><h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Chi Tiết Bánh</h3><div><label className="text-sm font-medium">Loại bánh</label><select required className={inputClass} value={form.cakeType} onChange={e => setForm({...form, cakeType: e.target.value})}><option value="">-- Chọn --</option>
-            {/* Sử dụng danh mục động từ Firebase nếu có, nếu không dùng list cứng */}
             {categories && categories.length > 0 ? categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>) : (
                 <>
                 <option value="Bánh Kem Sữa Tươi">Bánh Kem Sữa Tươi</option><option value="Bánh Mousse">Bánh Mousse</option><option value="Bánh Tiramisu">Bánh Tiramisu</option><option value="Bánh Bắp">Bánh Bắp</option><option value="Bánh Bông Lan Trứng Muối">Bánh Bông Lan Trứng Muối</option><option value="Khác">Khác</option>
@@ -799,3 +610,326 @@ const UserManagement = ({ users, currentUser, onUpdateRole }) => {
     </div>
   );
 };
+
+// --- MAIN APP COMPONENT ---
+
+export default function App() {
+  const [user, setFirebaseUser] = useState(null); 
+  const [appUser, setAppUser] = useState(null); 
+  
+  // Data States
+  const [usersList, setUsersList] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [shopSettings, setShopSettings] = useState({ logoUrl: SHOP_LOGO_URL, shopName: "BanhKemMeo.vn" });
+  
+  const [view, setView] = useState('landing'); 
+  const [activeTab, setActiveTab] = useState('create-order'); 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = 'success') => setToast({ message, type });
+
+  // Inject Font
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+    return () => document.head.removeChild(link);
+  }, []);
+
+  if (firebaseConfigError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4 font-sans">
+        <div className="bg-white border-4 border-red-500 p-8 rounded-xl shadow-2xl max-w-lg text-center">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-red-700 mb-4">LỖI CẤU HÌNH</h1>
+          <p className="text-gray-700 font-medium mb-6">{firebaseConfigError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Auth Error:", e);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => setFirebaseUser(u));
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch All Data
+  useEffect(() => {
+    // Settings Sync
+    const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
+    const unsubSettings = onSnapshot(settingsRef, (doc) => {
+        if (doc.exists()) setShopSettings(doc.data());
+    });
+
+    const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+    const unsubProducts = onSnapshot(productsRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProducts(list);
+    });
+
+    const categoriesRef = collection(db, 'artifacts', appId, 'public', 'data', 'categories');
+    const unsubCategories = onSnapshot(categoriesRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCategories(list);
+    });
+
+    if (!user) return () => { unsubProducts(); unsubCategories(); unsubSettings(); };
+
+    const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+    const unsubUsers = onSnapshot(usersRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsersList(list);
+      const savedPhone = localStorage.getItem('bkm_phone');
+      if (savedPhone) {
+        const found = list.find(u => u.phone === savedPhone);
+        if (found) {
+          setAppUser(found);
+          if (view === 'login') {
+             setView('dashboard');
+             if (found.role === ROLES.BAKER) setActiveTab('orders');
+          }
+        }
+      }
+    });
+
+    const ordersRef = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+    const unsubOrders = onSnapshot(ordersRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setOrders(list);
+    });
+
+    return () => {
+      unsubUsers(); unsubOrders(); unsubProducts(); unsubCategories(); unsubSettings();
+    };
+  }, [user, view]);
+
+  // ACTIONS
+  const handleLogin = (phone, password) => {
+    const targetUser = usersList.find(u => u.phone === phone);
+    if (targetUser && targetUser.password === password) {
+      setAppUser(targetUser);
+      localStorage.setItem('bkm_phone', phone);
+      setView('dashboard');
+      if (targetUser.role === ROLES.BAKER) setActiveTab('orders');
+      else setActiveTab('create-order');
+      showToast(`Xin chào ${targetUser.name}!`);
+    } else {
+      showToast('Sai số điện thoại hoặc mật khẩu!', 'error');
+    }
+  };
+
+  const handleRegister = async (name, phone, password) => {
+    if (usersList.find(u => u.phone === phone)) { showToast('SĐT đã tồn tại!', 'error'); return; }
+    const isOwner = phone === OWNER_PHONE;
+    const newUser = { name, phone, password, role: isOwner ? ROLES.OWNER : ROLES.PENDING, createdAt: new Date().toISOString() };
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), newUser);
+      showToast('Đăng ký thành công!');
+      setView('login');
+    } catch (e) { showToast('Lỗi đăng ký', 'error'); }
+  };
+
+  const handleLogout = () => { setAppUser(null); localStorage.removeItem('bkm_phone'); setView('landing'); };
+
+  const handleCreateOrder = async (orderData) => {
+    try {
+      const newOrder = { ...orderData, createdBy: appUser.name, createdAt: new Date().toISOString(), status: 'new', orderId: Date.now().toString().slice(-6) };
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), newOrder);
+      showToast('Tạo đơn thành công!');
+      setActiveTab('orders');
+    } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
+  };
+
+  const handleUpdateRole = async (phone, newRole) => {
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', phone), { role: newRole }); showToast('Cập nhật quyền thành công'); } catch (e) { showToast('Lỗi cập nhật', 'error'); }
+  };
+
+  // --- SETTINGS ACTIONS ---
+  const handleAddCategory = async (name) => {
+    try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'categories'), { name }); showToast('Thêm danh mục thành công!'); } catch (e) { showToast('Lỗi', 'error'); }
+  };
+  const handleDeleteCategory = async (id) => {
+    if(!window.confirm("Xóa?")) return;
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', id)); showToast('Đã xóa'); } catch (e) { showToast('Lỗi', 'error'); }
+  };
+  const handleSaveProduct = async (prodData) => {
+    try {
+      if (prodData.id) {
+         const { id, ...data } = prodData;
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id), data);
+         showToast('Cập nhật thành công');
+      } else {
+         const { id, ...data } = prodData;
+         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), data);
+         showToast('Thêm mới thành công');
+      }
+    } catch (e) { showToast('Lỗi lưu sản phẩm', 'error'); }
+  };
+  const handleDeleteProduct = async (id) => {
+    if(!window.confirm("Xóa sản phẩm?")) return;
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id)); showToast('Đã xóa'); } catch (e) { showToast('Lỗi xóa', 'error'); }
+  };
+  const handleSaveSettings = async (newSettings) => {
+    try {
+       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), newSettings);
+       showToast('Đã lưu cấu hình cửa hàng!');
+    } catch (e) { showToast('Lỗi lưu cấu hình', 'error'); }
+  };
+
+  const goToDashboard = () => { if (appUser) setView('dashboard'); else setView('login'); };
+
+  if (view === 'loading') return <div className="h-screen flex items-center justify-center text-orange-500 font-sans"><Loader className="animate-spin" size={40}/></div>;
+
+  // LANDING PAGE
+  if (view === 'landing') {
+      return (
+        <div className="min-h-screen bg-orange-50/30 font-sans flex flex-col" style={{ fontFamily: 'Quicksand, sans-serif' }}>
+            {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+            <header className="bg-white shadow-sm sticky top-0 z-40 px-4 md:px-8 h-20 flex justify-between items-center">
+                <Logo customUrl={shopSettings.logoUrl} />
+                <nav className="hidden md:flex items-center gap-8 text-gray-600 font-bold text-lg">
+                    <button onClick={() => setView('landing')} className="hover:text-orange-600">Trang Chủ</button>
+                    <a href="#products" className="hover:text-orange-600">Sản Phẩm</a>
+                    <a href="#about" className="hover:text-orange-600">Về Chúng Tôi</a>
+                </nav>
+                <button onClick={goToDashboard} className="hidden md:flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-full font-bold shadow-lg"><Users size={18} /><span>Dành Cho Nhân Viên</span></button>
+                <button className="md:hidden text-gray-600" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}><Menu size={28} /></button>
+            </header>
+            {mobileMenuOpen && (
+                <div className="fixed inset-0 z-50 bg-white p-6 md:hidden flex flex-col">
+                    <div className="flex justify-between items-center mb-8"><Logo customUrl={shopSettings.logoUrl} /><button onClick={() => setMobileMenuOpen(false)}><X size={28} className="text-gray-500"/></button></div>
+                    <div className="flex flex-col gap-6 text-xl font-bold text-gray-700">
+                        <button onClick={() => { setView('landing'); setMobileMenuOpen(false); }}>Trang Chủ</button>
+                        <a href="#products" onClick={() => setMobileMenuOpen(false)}>Sản Phẩm</a>
+                        <button onClick={() => { goToDashboard(); setMobileMenuOpen(false); }} className="text-orange-600 flex items-center gap-2"><Users size={20}/> Dành Cho Nhân Viên</button>
+                    </div>
+                </div>
+            )}
+            <div className="bg-gradient-to-br from-orange-400 to-red-500 text-white py-16 md:py-24 px-6 text-center relative overflow-hidden">
+                <div className="relative z-10 max-w-3xl mx-auto">
+                    <h1 className="text-4xl md:text-6xl font-bold mb-6 drop-shadow-lg">Hương Vị Ngọt Ngào <br/> Trao Gửi Yêu Thương</h1>
+                    <p className="text-lg md:text-xl opacity-90 mb-8 font-medium">Chào mừng đến với {shopSettings.shopName || "BanhKemMeo.vn"} - Nơi những chiếc bánh được làm từ trái tim.</p>
+                    <a href="#products" className="inline-block bg-white text-orange-600 px-8 py-3 rounded-full font-bold text-lg shadow-xl hover:scale-105 transition-all">Xem Menu Ngay</a>
+                </div>
+            </div>
+            <main id="products" className="flex-1 max-w-7xl mx-auto p-6 md:p-12 w-full">
+                <div className="text-center mb-12"><h2 className="text-3xl font-bold text-gray-800 mb-2">Sản Phẩm Nổi Bật</h2><div className="w-20 h-1 bg-orange-500 mx-auto rounded-full"></div></div>
+                {products.length === 0 ? <div className="text-center py-10 text-gray-500">Chưa có sản phẩm nào.</div> : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                        {products.map(product => (
+                            <div key={product.id} className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all overflow-hidden group border border-orange-100 flex flex-col h-full">
+                                <div className="relative pt-[100%] overflow-hidden bg-gray-100">
+                                    <img src={product.image || "https://via.placeholder.com/300?text=No+Image"} alt={product.name} className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"/>
+                                    {product.tag && <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">{product.tag}</span>}
+                                </div>
+                                <div className="p-5 flex-1 flex flex-col">
+                                    <h3 className="font-bold text-lg text-gray-800 mb-2">{product.name}</h3>
+                                    <div className="mt-auto flex items-center justify-between pt-3 border-t border-dashed border-gray-200">
+                                        <span className="text-orange-600 font-extrabold text-lg">{Number(product.price).toLocaleString()} đ</span>
+                                        <button className="bg-orange-100 text-orange-600 p-2 rounded-full hover:bg-orange-600 hover:text-white transition-colors"><ShoppingCart size={18} /></button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </main>
+            <section id="about" className="bg-white py-16 px-6 border-t border-orange-100">
+                <div className="max-w-4xl mx-auto text-center space-y-6">
+                    <h2 className="text-3xl font-bold text-gray-800">Về Chúng Tôi</h2>
+                    <p className="text-gray-600 text-lg leading-relaxed">Tại {shopSettings.shopName}, mỗi chiếc bánh là một tác phẩm nghệ thuật.</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-left mt-8">
+                        {["Nguyên liệu sạch", "Không chất bảo quản", "Giao hàng đúng hẹn", "Thiết kế theo yêu cầu"].map((item, i) => (
+                            <div key={i} className="flex items-center gap-2"><Check size={18} className="text-orange-600"/><span className="text-gray-700 font-medium">{item}</span></div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+            <footer className="bg-gray-900 text-gray-300 py-12 px-6 text-center">
+                <div className="mb-6"><Logo className="justify-center text-white" customUrl={shopSettings.logoUrl} /></div>
+                <p className="mb-6">{shopSettings.shopName} - 123 Đường Bánh Ngọt, TP.HCM - 0868.679.094</p>
+                <div className="border-t border-gray-800 pt-6 text-sm text-gray-500">© 2024 {shopSettings.shopName}. All rights reserved.</div>
+            </footer>
+        </div>
+      );
+  }
+
+  // LOGIN / REGISTER
+  if (view === 'login' || view === 'register') {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 relative font-sans" style={{ fontFamily: 'Quicksand, sans-serif' }}>
+        <button onClick={() => setView('landing')} className="absolute top-6 left-6 flex items-center gap-2 text-gray-600 hover:text-orange-600 font-medium transition bg-white px-4 py-2 rounded-full shadow-sm">
+            <HomeIcon size={20}/> Về Trang Chủ
+        </button>
+        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+        <div className="bg-white w-full max-w-md p-8 md:p-10 rounded-3xl shadow-2xl border border-orange-100">
+            <div className="text-center mb-8"><Logo className="justify-center mb-2" customUrl={shopSettings.logoUrl} /><h2 className="text-gray-500 text-sm">Hệ thống quản lý nội bộ</h2></div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">{view === 'login' ? 'Đăng Nhập Nhân Viên' : 'Đăng Ký Tài Khoản'}</h1>
+            {view === 'login' ? <AuthScreen type="login" onSwitch={() => setView('register')} onSubmit={handleLogin} /> : <AuthScreen type="register" onSwitch={() => setView('login')} onSubmit={handleRegister} />}
+        </div>
+      </div>
+    );
+  }
+
+  // DASHBOARD
+  return (
+    <div className="min-h-screen bg-orange-50 text-gray-800 flex flex-col md:flex-row font-sans" style={{ fontFamily: 'Quicksand, sans-serif' }}>
+      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-orange-100 h-screen sticky top-0 shadow-sm z-20">
+        <div className="p-6 border-b border-orange-100 cursor-pointer" onClick={() => setView('landing')}><Logo customUrl={shopSettings.logoUrl} /></div>
+        <nav className="flex-1 p-4 space-y-2">
+          <SidebarItem icon={<PlusCircle size={20}/>} label="Tạo Đơn" active={activeTab === 'create-order'} onClick={() => setActiveTab('create-order')} visible={appUser?.role !== ROLES.BAKER} />
+          <SidebarItem icon={<ClipboardList size={20}/>} label="Đơn Hàng" active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} />
+          <SidebarItem icon={<Users size={20}/>} label="Nhân Sự" active={activeTab === 'users'} onClick={() => setActiveTab('users')} visible={appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER} />
+          <SidebarItem icon={<Settings size={20}/>} label="Cài Đặt SP" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} visible={appUser?.role === ROLES.OWNER} />
+        </nav>
+        <div className="p-4 border-t border-orange-100 bg-orange-50/50">
+          <div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-orange-200 flex items-center justify-center text-orange-700 font-bold">{appUser?.name?.charAt(0)}</div><div><p className="font-medium truncate">{appUser?.name}</p><p className="text-xs text-gray-500 uppercase">{ROLE_LABELS[appUser?.role]}</p></div></div>
+          <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-medium w-full p-2 rounded-lg hover:bg-red-50 transition"><LogOut size={16} /> Thoát</button>
+        </div>
+      </aside>
+      {/* Mobile Menu Dashboard */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-30 bg-white pt-20 px-6">
+          <button onClick={() => setMobileMenuOpen(false)} className="absolute top-4 right-4 text-gray-500"><X size={24}/></button>
+          <nav className="space-y-4 text-lg">
+             <button onClick={() => { setView('landing'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b">Về Trang Chủ</button>
+             {appUser?.role !== ROLES.BAKER && <button onClick={() => { setActiveTab('create-order'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b">Tạo Đơn</button>}
+             <button onClick={() => { setActiveTab('orders'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b">Đơn Hàng</button>
+             {(appUser?.role === ROLES.OWNER || appUser?.role === ROLES.MANAGER) && <button onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b">Nhân Sự</button>}
+             {appUser?.role === ROLES.OWNER && <button onClick={() => { setActiveTab('settings'); setMobileMenuOpen(false); }} className="block w-full text-left py-3 border-b">Cài Đặt</button>}
+             <button onClick={handleLogout} className="block w-full text-left py-3 text-red-500 mt-4 font-bold">Đăng xuất</button>
+          </nav>
+        </div>
+      )}
+      {/* Mobile Header Dashboard */}
+      <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-20"><Logo customUrl={shopSettings.logoUrl} /><button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-orange-600"><Menu /></button></div>
+
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+        <div className="max-w-6xl mx-auto">
+          {activeTab === 'create-order' && <CreateOrderForm categories={categories} onSubmit={handleCreateOrder} />}
+          {activeTab === 'orders' && <OrderList orders={orders} />}
+          {activeTab === 'users' && <UserManagement users={usersList} currentUser={appUser} onUpdateRole={handleUpdateRole} />}
+          {activeTab === 'settings' && <SettingsPanel categories={categories} products={products} settings={shopSettings} onAddCategory={handleAddCategory} onDeleteCategory={handleDeleteCategory} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} onSaveSettings={handleSaveSettings} />}
+        </div>
+      </main>
+    </div>
+  );
+}
