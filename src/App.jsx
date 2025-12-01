@@ -42,9 +42,8 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- CONFIGURATION ---
-// Thay thế URL logo của bạn vào đây (ví dụ: "https://i.imgur.com/your-logo.png")
-// Nếu để trống (""), hệ thống sẽ dùng logo mặc định
-const SHOP_LOGO_URL = "https://drive.google.com/file/d/1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov/view?usp=sharing"; 
+// Đã cập nhật đường dẫn trực tiếp cho Logo từ Google Drive của bạn
+const SHOP_LOGO_URL = "https://drive.google.com/uc?export=view&id=1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov"; 
 
 const DEFAULT_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
@@ -163,12 +162,21 @@ const SAMPLE_PRODUCTS = [
 const Logo = ({ className }) => (
   <div className={`flex items-center gap-3 font-bold text-2xl text-orange-600 ${className}`} style={{ fontFamily: 'Quicksand, sans-serif' }}>
     {SHOP_LOGO_URL ? (
-      <img src={SHOP_LOGO_URL} alt="Logo" className="h-10 w-auto object-contain" />
+      <img 
+        src={SHOP_LOGO_URL} 
+        alt="Logo" 
+        className="h-12 w-auto object-contain" // Tăng kích thước logo lên một chút cho đẹp
+        onError={(e) => {
+          e.target.onerror = null; 
+          e.target.style.display = 'none'; // Ẩn ảnh nếu lỗi và hiện text backup
+        }}
+      />
     ) : (
       <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center text-white shadow-md">
         <Cake size={20} />
       </div>
     )}
+    {/* Nếu logo lỗi, dòng text này vẫn sẽ hiển thị để đảm bảo thương hiệu */}
     <span className="tracking-tight">BanhKemMeo.vn</span>
   </div>
 );
