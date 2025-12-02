@@ -1,22 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Cake, Users, ClipboardList, LogOut, PlusCircle, Menu, X, 
-  DollarSign, ShoppingCart, Loader, Copy, Check, AlertCircle, 
-  Upload, Image as ImageIcon, Trash2, Home, Search, 
-  MapPin, Phone, Clock, Settings, Edit, Save, List, Package, Store,
-  Facebook, MessageCircle, Filter
+  ShoppingBag, Search, Menu, X, ChevronRight, Plus, Trash2, Edit, 
+  Settings, LayoutGrid, Package, Image as ImageIcon, Save, LogOut, 
+  User, RefreshCw, Loader2, Database
 } from 'lucide-react';
+
+// --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, doc, setDoc, updateDoc, deleteDoc 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot,
+  query,
+  orderBy
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
-// --- CẤU HÌNH MẶC ĐỊNH ---
-const DEFAULT_LOGO_URL = "https://drive.google.com/uc?export=view&id=1GTA2aVIhwVn6hHnhlLY2exJVVJYzZOov";
-const DEFAULT_BANNER_URL = "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1600&q=80";
-
-const DEFAULT_FIREBASE_CONFIG = {
+// --- CẤU HÌNH FIREBASE (DÀNH CHO BẠN SỬA ĐỔI KHI CHẠY Ở MÁY CÁ NHÂN) ---
+// Khi copy về VS Code, hãy bỏ comment và điền thông tin của bạn vào đây:
+/*
+const yourFirebaseConfig = {
   apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
   projectId: "meo-bakery-4c04f",
@@ -24,572 +39,676 @@ const DEFAULT_FIREBASE_CONFIG = {
   messagingSenderId: "289466483676",
   appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
 };
+*/
 
-// --- KHỞI TẠO FIREBASE ---
-let firebaseConfig;
-let appId;
-let firebaseConfigError = null;
-
-try {
-    let envConfigJson = null;
-    try { envConfigJson = process.env.REACT_APP_FIREBASE_CONFIG; } catch (e) {}
-
-    if (envConfigJson) {
-        firebaseConfig = JSON.parse(envConfigJson);
-        appId = firebaseConfig.appId.split(':').pop() || 'default-app-id'; 
-    } else if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        firebaseConfig = JSON.parse(__firebase_config);
-        appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    } else {
-        firebaseConfig = DEFAULT_FIREBASE_CONFIG;
-        appId = 'default-app-id';
-        try {
-             if (process.env.NODE_ENV === 'production') {
-                 firebaseConfigError = "Thiếu biến môi trường REACT_APP_FIREBASE_CONFIG!";
-             }
-        } catch(e) {}
-    }
-} catch (e) {
-    firebaseConfigError = "Lỗi cú pháp JSON trong cấu hình Firebase.";
-    firebaseConfig = DEFAULT_FIREBASE_CONFIG;
-    appId = 'default-app-id';
-}
+// --- KHỞI TẠO FIREBASE (LOGIC CHẠY TRONG PREVIEW) ---
+// Chúng tôi sử dụng biến môi trường để demo hoạt động ngay lập tức.
+// Khi bạn chạy thật, hãy thay `firebaseConfig` bằng `yourFirebaseConfig` ở trên.
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : {}; // Fallback empty object to prevent crash if config missing
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+// Sử dụng appId từ môi trường hoặc fallback
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'meo-bakery-demo';
 
-// --- HẰNG SỐ & HELPER ---
-const ROLES = { OWNER: 'owner', MANAGER: 'manager', SALES: 'sales', BAKER: 'baker', PENDING: 'pending' };
-const ROLE_LABELS = { [ROLES.OWNER]: 'Chủ tiệm', [ROLES.MANAGER]: 'Quản lý', [ROLES.SALES]: 'Bán hàng', [ROLES.BAKER]: 'Thợ bánh', [ROLES.PENDING]: 'Chờ duyệt' };
-const OWNER_PHONE = '0868679094';
+// --- Dữ liệu mẫu (Dùng để khởi tạo DB nếu trống) ---
+const INITIAL_CATEGORIES = [
+  { name: 'Bánh Kem Sữa Tươi', slug: 'sua-tuoi' },
+  { name: 'Bánh Kem Bắp', slug: 'kem-bap' },
+  { name: 'Tiramisu & Mousse', slug: 'tiramisu' },
+  { name: 'Bánh Mì & Pastry', slug: 'banh-mi' },
+];
 
-const compressImage = (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; 
-        let width = img.width; let height = img.height;
-        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
-      };
-    };
-  });
+const INITIAL_PRODUCTS = [
+  {
+    name: 'Bánh Kem Bắp Hương Xưa',
+    price: 350000,
+    categoryName: 'Bánh Kem Bắp',
+    image: 'https://images.unsplash.com/photo-1557925923-cd4c295951b0?auto=format&fit=crop&q=80&w=800',
+    description: 'Cốt bánh bông lan mềm mịn kết hợp với sốt kem bắp thơm lừng.'
+  },
+  {
+    name: 'Strawberry Shortcake',
+    price: 420000,
+    categoryName: 'Bánh Kem Sữa Tươi',
+    image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&q=80&w=800',
+    description: 'Dâu tây tươi Đà Lạt cùng lớp kem sữa tươi ít ngọt.'
+  },
+  {
+    name: 'Tiramisu Cổ Điển',
+    price: 85000,
+    categoryName: 'Tiramisu & Mousse',
+    image: 'https://images.unsplash.com/photo-1571115177098-24ec42ed204d?auto=format&fit=crop&q=80&w=800',
+    description: 'Hương vị cà phê Ý đậm đà quyện cùng phô mai Mascarpone.'
+  }
+];
+
+const DEFAULT_SETTINGS = {
+  shopName: 'Tiệm Bánh Hạnh Phúc',
+  logoUrl: 'https://cdn-icons-png.flaticon.com/512/992/992717.png',
+  bannerUrl: 'https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&q=80&w=1600',
+  phone: '0909 123 456',
+  address: '123 Đường Ngọt Ngào, Quận 1, TP.HCM'
 };
 
-const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-
-// --- COMPONENTS CHUNG ---
-const Logo = ({ className, customUrl }) => (
-  <div className={`flex items-center gap-2 font-bold text-2xl text-orange-600 ${className}`} style={{ fontFamily: 'Quicksand, sans-serif' }}>
-    <img src={customUrl || DEFAULT_LOGO_URL} alt="Logo" className="h-10 w-auto object-contain" onError={(e) => {e.target.style.display='none'}} />
-    <span className="tracking-tight">BanhKemMeo.vn</span>
-  </div>
-);
-
-const Toast = ({ message, type = 'success', onClose }) => {
-  useEffect(() => { const timer = setTimeout(onClose, 3000); return () => clearTimeout(timer); }, [onClose]);
-  return (
-    <div className={`fixed top-20 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-medium flex items-center gap-3 animate-fade-in-down ${type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
-      {type === 'error' ? <AlertCircle size={20}/> : <Check size={20}/>} {typeof message === 'string' ? message : 'Thông báo'}
-    </div>
-  );
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 };
 
-const ImagePreviewModal = ({ src, onClose }) => {
-  if (!src) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-fade-in-up" onClick={onClose}>
-      <button onClick={onClose} className="absolute top-4 right-4 text-white bg-white/20 p-2 rounded-full hover:bg-white/30"><X size={24}/></button>
-      <img src={src} alt="Preview" className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
-    </div>
-  );
-};
-
-// --- COMPONENT QUẢN TRỊ (BACKEND) ---
-
-const SidebarItem = ({ icon, label, active, onClick, visible = true }) => {
-  if (!visible) return null;
-  return (
-    <button 
-      onClick={onClick} 
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all font-medium mb-1 ${
-        active ? 'bg-orange-600 text-white shadow-md' : 'text-gray-600 hover:bg-orange-50 hover:text-orange-700'
-      }`}
-    >
-      {icon} <span>{label}</span>
-    </button>
-  );
-};
-
-const ProductManager = ({ products, categories, onSave, onDelete }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [form, setForm] = useState({ id: null, name: "", price: "", category: "", image: null, tag: "" });
-  const fileInputRef = useRef(null);
-
-  const handleEdit = (prod) => { setForm(prod); setIsEditing(true); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const handleCancel = () => { setForm({ id: null, name: "", price: "", category: "", image: null, tag: "" }); setIsEditing(false); if(fileInputRef.current) fileInputRef.current.value = ""; };
-  
-  const handleImage = async (e) => {
-    const file = e.target.files[0];
-    if (file) setForm({...form, image: await compressImage(file)});
-  };
-
-  return (
-    <div className="space-y-6">
-       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-gray-800">
-             {isEditing ? <Edit className="text-blue-500"/> : <PlusCircle className="text-green-500"/>} 
-             {isEditing ? 'Chỉnh Sửa Sản Phẩm' : 'Thêm Sản Phẩm Mới'}
-          </h3>
-          <form onSubmit={(e) => { e.preventDefault(); onSave(form); handleCancel(); }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div><label className="text-sm font-medium text-gray-600">Tên bánh</label><input required className="w-full p-2 border rounded-lg" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} placeholder="VD: Bánh kem dâu"/></div>
-             <div><label className="text-sm font-medium text-gray-600">Giá bán</label><input required type="number" className="w-full p-2 border rounded-lg" value={form.price} onChange={e=>setForm({...form, price: e.target.value})} placeholder="VD: 350000"/></div>
-             <div><label className="text-sm font-medium text-gray-600">Danh mục</label><select required className="w-full p-2 border rounded-lg" value={form.category} onChange={e=>setForm({...form, category: e.target.value})}><option value="">-- Chọn danh mục --</option>{categories.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
-             <div><label className="text-sm font-medium text-gray-600">Tag (Mới, Hot...)</label><input className="w-full p-2 border rounded-lg" value={form.tag} onChange={e=>setForm({...form, tag: e.target.value})} placeholder="VD: Bán chạy"/></div>
-             <div className="md:col-span-2">
-                <label className="text-sm font-medium text-gray-600 block mb-2">Hình ảnh</label>
-                <div className="flex items-center gap-4">
-                   <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImage} className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"/>
-                   {form.image && <img src={form.image} className="h-16 w-16 object-cover rounded border" alt="Preview"/>}
-                </div>
-             </div>
-             <div className="md:col-span-2 flex gap-2">
-                <button type="submit" className={`flex-1 py-2 rounded-lg font-bold text-white ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}>{isEditing ? 'Cập Nhật' : 'Thêm Mới'}</button>
-                {isEditing && <button type="button" onClick={handleCancel} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50">Hủy</button>}
-             </div>
-          </form>
-       </div>
-
-       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-4 border-b bg-gray-50 font-bold text-gray-700">Danh Sách Sản Phẩm ({products.length})</div>
-          <div className="overflow-x-auto">
-             <table className="w-full text-left text-sm">
-                <thead className="bg-gray-100 text-gray-600 uppercase"><tr><th className="p-3">Ảnh</th><th className="p-3">Tên</th><th className="p-3">Giá</th><th className="p-3">Danh mục</th><th className="p-3 text-right">Hành động</th></tr></thead>
-                <tbody className="divide-y">
-                   {products.map(p => (
-                      <tr key={p.id} className="hover:bg-orange-50/50">
-                         <td className="p-3"><img src={p.image || "https://via.placeholder.com/50"} className="w-10 h-10 rounded object-cover border" alt=""/></td>
-                         <td className="p-3 font-medium">{p.name} {p.tag && <span className="text-[10px] bg-red-100 text-red-600 px-1 rounded">{p.tag}</span>}</td>
-                         <td className="p-3 text-orange-600 font-bold">{Number(p.price).toLocaleString()}</td>
-                         <td className="p-3"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{p.category}</span></td>
-                         <td className="p-3 text-right">
-                            <button onClick={()=>handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3"><Edit size={16}/></button>
-                            <button onClick={()=>{if(window.confirm('Xóa sản phẩm này?')) onDelete(p.id)}} className="text-red-600 hover:text-red-800"><Trash2 size={16}/></button>
-                         </td>
-                      </tr>
-                   ))}
-                </tbody>
-             </table>
-          </div>
-       </div>
-    </div>
-  );
-};
-
-const SettingsManager = ({ categories, settings, onAddCat, onDeleteCat, onSaveSettings }) => {
-   const [catName, setCatName] = useState("");
-   const [shopConfig, setShopConfig] = useState(settings);
-
-   useEffect(() => { if(settings) setShopConfig(settings); }, [settings]);
-
-   return (
-     <div className="grid md:grid-cols-2 gap-6">
-        {/* Cấu hình Cửa hàng */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-gray-800"><Store size={20}/> Thông Tin Cửa Hàng</h3>
-           <div className="space-y-4">
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Tên cửa hàng</label><input className="w-full p-2 border rounded mt-1" value={shopConfig.shopName||""} onChange={e=>setShopConfig({...shopConfig, shopName: e.target.value})}/></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Logo URL</label><input className="w-full p-2 border rounded mt-1" value={shopConfig.logoUrl||""} onChange={e=>setShopConfig({...shopConfig, logoUrl: e.target.value})}/></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Hotline</label><input className="w-full p-2 border rounded mt-1" value={shopConfig.hotline||""} onChange={e=>setShopConfig({...shopConfig, hotline: e.target.value})}/></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Zalo Link</label><input className="w-full p-2 border rounded mt-1" value={shopConfig.zaloLink||""} onChange={e=>setShopConfig({...shopConfig, zaloLink: e.target.value})}/></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Facebook Link</label><input className="w-full p-2 border rounded mt-1" value={shopConfig.fbLink||""} onChange={e=>setShopConfig({...shopConfig, fbLink: e.target.value})}/></div>
-              <button onClick={()=>onSaveSettings(shopConfig)} className="w-full bg-orange-600 text-white py-2 rounded font-bold hover:bg-orange-700 mt-2">Lưu Thay Đổi</button>
-           </div>
-        </div>
-
-        {/* Quản lý Danh mục */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-gray-800"><List size={20}/> Danh Mục Sản Phẩm</h3>
-           <div className="flex gap-2 mb-4">
-              <input className="flex-1 p-2 border rounded" placeholder="Tên danh mục mới..." value={catName} onChange={e=>setCatName(e.target.value)}/>
-              <button onClick={()=>{if(catName){onAddCat(catName); setCatName("")}}} className="bg-blue-600 text-white px-4 rounded font-bold hover:bg-blue-700">Thêm</button>
-           </div>
-           <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {categories.map(cat => (
-                 <div key={cat.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                    <span className="font-medium">{cat.name}</span>
-                    <button onClick={()=>{if(window.confirm("Xóa danh mục này?")) onDeleteCat(cat.id)}} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={16}/></button>
-                 </div>
-              ))}
-              {categories.length === 0 && <p className="text-gray-400 text-center text-sm italic">Chưa có danh mục nào.</p>}
-           </div>
-        </div>
-     </div>
-   );
-};
-
-const CreateOrderForm = ({ categories, onSubmit }) => {
-  const [form, setForm] = useState({ customerName:'', phone:'', address:'', pickupTime:'', cakeType:'', requests:'', message:'', total:0, deposit:0 });
-  const [images, setImages] = useState([]);
-  const handleImage = async (e) => { const files=Array.from(e.target.files); if(files.length+images.length>5) return alert("Max 5 ảnh"); setImages([...images, ...await Promise.all(files.map(compressImage))]); };
-  const handleSubmit = (e) => { e.preventDefault(); onSubmit({...form, remaining: form.total-form.deposit, sampleImages: images}); setForm({customerName:'',phone:'',address:'',pickupTime:'',cakeType:'',requests:'',message:'',total:0,deposit:0}); setImages([]); };
-  const inputClass = "w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500";
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-orange-100 overflow-hidden">
-      <div className="bg-orange-600 p-4 text-white font-bold text-lg flex items-center gap-2"><PlusCircle/> Tạo Đơn Mới</div>
-      <form onSubmit={handleSubmit} className="p-6 grid md:grid-cols-2 gap-6">
-         <div className="space-y-4">
-           <h4 className="font-bold text-gray-700 border-b pb-2">Thông tin khách</h4>
-           <input required className={inputClass} placeholder="Tên khách hàng" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} />
-           <input required className={inputClass} placeholder="Số điện thoại" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
-           <input className={inputClass} placeholder="Địa chỉ giao hàng" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} />
-           <input required type="datetime-local" className={inputClass} value={form.pickupTime} onChange={e=>setForm({...form, pickupTime: e.target.value})} />
-         </div>
-         <div className="space-y-4">
-           <h4 className="font-bold text-gray-700 border-b pb-2">Chi tiết bánh</h4>
-           <select required className={inputClass} value={form.cakeType} onChange={e=>setForm({...form, cakeType: e.target.value})}>
-             <option value="">-- Chọn loại bánh --</option>
-             {categories.length > 0 ? categories.map(c=><option key={c.id} value={c.name}>{c.name}</option>) : <option value="Khác">Khác</option>}
-           </select>
-           <textarea className={`${inputClass} h-24`} placeholder="Yêu cầu chi tiết (size, cốt bánh, vị...)" value={form.requests} onChange={e=>setForm({...form, requests: e.target.value})} />
-           <input className={inputClass} placeholder="Lời chúc ghi trên bánh" value={form.message} onChange={e=>setForm({...form, message: e.target.value})} />
-         </div>
-         <div className="md:col-span-2">
-            <label className="block font-bold text-gray-700 mb-2">Ảnh mẫu (Max 5)</label>
-            <div className="flex items-center gap-4">
-                <label className="w-24 h-24 flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50">
-                    <Upload className="text-gray-400"/><span className="text-xs text-gray-500 mt-1">Thêm ảnh</span>
-                    <input type="file" hidden multiple accept="image/*" onChange={handleImage}/>
-                </label>
-                <div className="flex gap-2 overflow-x-auto">{images.map((img,i)=><div key={i} className="relative w-24 h-24 group"><img src={img} className="w-full h-full object-cover rounded-lg border"/><button type="button" onClick={()=>setImages(images.filter((_,x)=>x!==i))} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow opacity-0 group-hover:opacity-100"><X size={12}/></button></div>)}</div>
-            </div>
-         </div>
-         <div className="md:col-span-2 bg-orange-50 p-4 rounded-lg grid grid-cols-3 gap-4 border border-orange-100">
-            <div><label className="text-sm font-bold text-gray-600">Tổng tiền</label><input type="number" required className="w-full p-2 border rounded font-bold" value={form.total} onChange={e=>setForm({...form, total: Number(e.target.value)})} /></div>
-            <div><label className="text-sm font-bold text-gray-600">Đã cọc</label><input type="number" className="w-full p-2 border rounded text-blue-600" value={form.deposit} onChange={e=>setForm({...form, deposit: Number(e.target.value)})} /></div>
-            <div><label className="text-sm font-bold text-gray-600">Còn lại</label><div className="p-2 text-xl font-extrabold text-red-600">{Number(form.total-form.deposit).toLocaleString()} đ</div></div>
-         </div>
-         <button type="submit" className="md:col-span-2 bg-orange-600 text-white py-3 rounded-lg font-bold shadow hover:bg-orange-700 transition">Lưu Đơn Hàng</button>
-      </form>
-    </div>
-  );
-};
-
-const OrderList = ({ orders }) => {
-  const [viewImg, setViewImg] = useState(null);
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Danh Sách Đơn Hàng ({orders.length})</h2>
-      {orders.length===0 ? <div className="text-center py-10 text-gray-400 italic">Chưa có đơn hàng nào.</div> : 
-      <div className="grid gap-4">
-         {orders.map(o => (
-            <div key={o.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:border-orange-200 transition relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
-               <div className="flex flex-col md:flex-row justify-between gap-4">
-                  <div className="flex-1 space-y-2">
-                     <div className="flex items-center gap-2">
-                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded uppercase">{o.cakeType}</span>
-                        <span className="text-gray-400 text-xs">#{o.orderId}</span>
-                        <span className="text-gray-400 text-xs ml-auto md:hidden">{new Date(o.createdAt).toLocaleDateString()}</span>
-                     </div>
-                     <div className="font-bold text-lg text-gray-800">{o.customerName} <span className="font-normal text-gray-500 text-sm">- {o.phone}</span></div>
-                     <div className="text-sm text-gray-600 flex items-center gap-2"><Clock size={14}/> Lấy bánh: <strong>{new Date(o.pickupTime).toLocaleString('vi-VN')}</strong></div>
-                     <div className="text-sm text-gray-600 flex items-center gap-2"><MapPin size={14}/> {o.address || 'Tại tiệm'}</div>
-                     {o.requests && <div className="bg-gray-50 p-2 rounded text-sm text-gray-700 mt-2">📝 {o.requests}</div>}
-                     {o.message && <div className="text-orange-600 text-sm italic">Lời chúc: "{o.message}"</div>}
-                     {o.sampleImages?.length > 0 && <div className="flex gap-2 mt-2">{o.sampleImages.map((src, i) => <img key={i} src={src} className="w-12 h-12 rounded border object-cover cursor-pointer hover:opacity-80" onClick={()=>setViewImg(src)} alt=""/>)}</div>}
-                  </div>
-                  <div className="flex flex-col items-end justify-between min-w-[140px] border-t md:border-t-0 md:border-l md:pl-4 pt-4 md:pt-0 border-dashed border-gray-200">
-                     <div className="text-right w-full">
-                        <div className="flex justify-between md:block"><span className="text-gray-500 text-xs">Tổng:</span> <span className="font-bold">{Number(o.total).toLocaleString()}</span></div>
-                        <div className="flex justify-between md:block"><span className="text-gray-500 text-xs">Cọc:</span> <span className="text-blue-600">{Number(o.deposit).toLocaleString()}</span></div>
-                        <div className="flex justify-between md:block mt-2 pt-2 border-t border-dashed"><span className="text-gray-500 text-xs font-bold">CÒN:</span> <span className="text-red-600 font-extrabold text-lg">{Number(o.total-o.deposit).toLocaleString()}</span></div>
-                     </div>
-                     <div className="text-xs text-gray-300 mt-2">Tạo bởi: {o.createdBy}</div>
-                  </div>
-               </div>
-            </div>
-         ))}
-      </div>}
-      {viewImg && <ImagePreviewModal src={viewImg} onClose={()=>setViewImg(null)}/>}
-    </div>
-  );
-};
-
-// --- TRANG CHỦ (LANDING PAGE) ---
-const LandingPage = ({ products, categories, shopSettings, onGoToAdmin }) => {
-  const [filter, setFilter] = useState("ALL");
-  
-  // Lọc sản phẩm theo danh mục
-  const filteredProducts = filter === "ALL" 
-      ? products 
-      : products.filter(p => p.category === filter);
-
-  return (
-    <div className="min-h-screen bg-orange-50/30 font-sans" style={{ fontFamily: 'Quicksand, sans-serif' }}>
-        {/* Header */}
-        <header className="bg-white sticky top-0 z-40 px-4 md:px-8 h-20 flex justify-between items-center shadow-sm">
-            <Logo customUrl={shopSettings.logoUrl}/>
-            <div className="hidden md:flex gap-6 font-bold text-gray-600 text-sm">
-                <a href="#home" className="hover:text-orange-600">TRANG CHỦ</a>
-                <a href="#menu" className="hover:text-orange-600">THỰC ĐƠN</a>
-                <a href="#contact" className="hover:text-orange-600">LIÊN HỆ</a>
-            </div>
-            <button onClick={onGoToAdmin} className="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-full text-sm font-bold hover:bg-gray-700 transition">
-                <Users size={16}/> Dành cho nhân viên
-            </button>
-        </header>
-
-        {/* Hero Banner */}
-        <div id="home" className="relative bg-gradient-to-r from-orange-500 to-red-500 text-white py-20 px-6 text-center">
-            <div className="max-w-3xl mx-auto relative z-10">
-                <h1 className="text-4xl md:text-6xl font-extrabold mb-4 drop-shadow-md">Bánh Kem Ngon Mỗi Ngày</h1>
-                <p className="text-lg opacity-90 mb-8">Chào mừng bạn đến với {shopSettings.shopName}. Chúng tôi mang đến những chiếc bánh ngọt ngào nhất cho sự kiện của bạn.</p>
-                <a href="#menu" className="bg-white text-orange-600 px-8 py-3 rounded-full font-bold shadow-lg hover:scale-105 transition inline-block">Xem Menu Ngay</a>
-            </div>
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-        </div>
-
-        {/* Menu Section */}
-        <main id="menu" className="max-w-7xl mx-auto p-6 py-16">
-            <div className="text-center mb-10">
-                <h2 className="text-3xl font-bold text-gray-800">Thực Đơn Của Chúng Tôi</h2>
-                <div className="w-20 h-1 bg-orange-500 mx-auto mt-2 rounded-full"></div>
-            </div>
-
-            {/* Category Filter Bar */}
-            <div className="flex gap-3 overflow-x-auto pb-4 mb-8 justify-start md:justify-center scrollbar-hide">
-                <button 
-                    onClick={() => setFilter("ALL")} 
-                    className={`px-5 py-2 rounded-full whitespace-nowrap font-bold transition ${filter === "ALL" ? 'bg-orange-600 text-white shadow-lg' : 'bg-white text-gray-600 border border-gray-200 hover:bg-orange-50'}`}
-                >
-                    Tất cả
-                </button>
-                {categories.map(cat => (
-                    <button 
-                        key={cat.id}
-                        onClick={() => setFilter(cat.name)} 
-                        className={`px-5 py-2 rounded-full whitespace-nowrap font-bold transition ${filter === cat.name ? 'bg-orange-600 text-white shadow-lg' : 'bg-white text-gray-600 border border-gray-200 hover:bg-orange-50'}`}
-                    >
-                        {cat.name}
-                    </button>
-                ))}
-            </div>
-
-            {/* Product Grid */}
-            {filteredProducts.length === 0 ? (
-                <div className="text-center py-20 text-gray-400">Hiện chưa có bánh trong danh mục này.</div>
-            ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {filteredProducts.map(p => (
-                        <div key={p.id} className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition overflow-hidden group border border-orange-50 flex flex-col h-full">
-                            <div className="relative pt-[100%] bg-gray-100">
-                                <img src={p.image || "https://via.placeholder.com/300?text=No+Image"} className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-105 transition duration-500" alt={p.name}/>
-                                {p.tag && <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow">{p.tag}</span>}
-                            </div>
-                            <div className="p-4 flex-1 flex flex-col">
-                                <h3 className="font-bold text-gray-800 mb-1 line-clamp-2 group-hover:text-orange-600 transition">{p.name}</h3>
-                                <div className="mt-auto pt-3 border-t border-dashed border-gray-100 flex justify-between items-center">
-                                    <span className="text-orange-600 font-extrabold text-lg">{Number(p.price).toLocaleString()} đ</span>
-                                    <button className="bg-orange-50 text-orange-600 p-2 rounded-full hover:bg-orange-600 hover:text-white transition"><ShoppingCart size={18}/></button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </main>
-
-        {/* Footer / Contact */}
-        <footer id="contact" className="bg-gray-900 text-gray-300 py-12">
-            <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-3 gap-10">
-                <div>
-                    <Logo className="text-white mb-4" customUrl={shopSettings.logoUrl}/>
-                    <p className="text-sm opacity-70">Thơm ngon trong từng lớp bánh. Đặt hàng ngay hôm nay để nhận ưu đãi.</p>
-                </div>
-                <div>
-                    <h4 className="text-white font-bold mb-4">Liên Hệ</h4>
-                    <ul className="space-y-3 text-sm">
-                        <li className="flex items-center gap-2"><Phone size={16} className="text-orange-500"/> {shopSettings.hotline}</li>
-                        <li className="flex items-center gap-2"><MapPin size={16} className="text-orange-500"/> 123 Đường Bánh Ngọt, TP.HCM</li>
-                    </ul>
-                </div>
-                <div>
-                    <h4 className="text-white font-bold mb-4">Kết Nối</h4>
-                    <div className="flex gap-3">
-                        {shopSettings.zaloLink && <a href={shopSettings.zaloLink} target="_blank" rel="noreferrer" className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90 flex items-center gap-2"><MessageCircle size={16}/> Zalo</a>}
-                        {shopSettings.fbLink && <a href={shopSettings.fbLink} target="_blank" rel="noreferrer" className="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90 flex items-center gap-2"><Facebook size={16}/> Facebook</a>}
-                    </div>
-                </div>
-            </div>
-            <div className="text-center text-xs text-gray-600 mt-10 pt-6 border-t border-gray-800">© 2024 {shopSettings.shopName}. All rights reserved.</div>
-        </footer>
-    </div>
-  );
-};
-
-// --- APP MAIN ---
+// --- Component Chính ---
 export default function App() {
-  const [user, setUser] = useState(null); 
-  const [appUser, setAppUser] = useState(null); 
-  const [usersList, setUsersList] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [user, setUser] = useState(null);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  
+  // Data State (Từ Firestore)
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [shopSettings, setShopSettings] = useState({ logoUrl: DEFAULT_LOGO_URL, shopName: "BanhKemMeo.vn", hotline: "0868679094" });
-  
-  const [view, setView] = useState('landing'); // landing, login, dashboard
-  const [activeTab, setActiveTab] = useState('create-order'); 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const showToast = (msg, type = 'success') => setToast({ message: msg, type });
+  // UI State
+  const [cart, setCart] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null); // ID category
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Inject Font
-  useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-    return () => document.head.removeChild(link);
-  }, []);
-
-  // Auth Init
+  // 1. Khởi tạo Auth
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-        else await signInAnonymously(auth);
-      } catch (e) { console.error("Auth Err:", e); }
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Auth error:", error);
+      }
     };
     initAuth();
-    return onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
   }, []);
 
-  // Data Sync
+  // 2. Lắng nghe dữ liệu từ Firestore (Realtime)
   useEffect(() => {
-    // Public Data Sync (For Landing Page)
-    const unsub1 = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), d => { if(d.exists()) setShopSettings(prev=>({...prev, ...d.data()})) });
-    const unsub2 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'products'), s => setProducts(s.docs.map(d=>({id:d.id,...d.data()}))));
-    const unsub3 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'categories'), s => setCategories(s.docs.map(d=>({id:d.id,...d.data()}))));
+    if (!user) return;
 
-    // Private Data Sync (For Staff/Owner)
-    let unsub4=()=>{}, unsub5=()=>{};
-    if(user) {
-        unsub4 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'users'), s => {
-            const list = s.docs.map(d=>({id:d.id,...d.data()})); setUsersList(list);
-            const saved = localStorage.getItem('bkm_phone'); 
-            if(saved){ const u = list.find(x=>x.phone===saved); if(u){ setAppUser(u); if(view==='login') setView('dashboard'); } }
-        });
-        unsub5 = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), s => setOrders(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))));
-    }
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
-  }, [user, view]);
+    // Listen Settings
+    const unsubSettings = onSnapshot(
+      doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setSettings(docSnap.data());
+        }
+      },
+      (error) => console.error("Settings error:", error)
+    );
 
-  // Handlers
-  const handleLogin = (phone, password) => {
-    const u = usersList.find(x=>x.phone===phone);
-    if (u && u.password===password) { setAppUser(u); localStorage.setItem('bkm_phone', phone); setView('dashboard'); showToast(`Xin chào ${u.name}`); }
-    else showToast('Sai thông tin', 'error');
+    // Listen Categories
+    const unsubCategories = onSnapshot(
+      collection(db, 'artifacts', appId, 'public', 'data', 'categories'),
+      (snapshot) => {
+        const cats = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Sort manually since we can't use complex queries easily
+        cats.sort((a, b) => a.name.localeCompare(b.name));
+        setCategories(cats);
+        if (cats.length > 0 && !selectedCategory) {
+          setSelectedCategory(cats[0].id);
+        }
+      },
+      (error) => console.error("Categories error:", error)
+    );
+
+    // Listen Products
+    const unsubProducts = onSnapshot(
+      collection(db, 'artifacts', appId, 'public', 'data', 'products'),
+      (snapshot) => {
+        const prods = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setProducts(prods);
+        setIsLoading(false);
+      },
+      (error) => console.error("Products error:", error)
+    );
+
+    return () => {
+      unsubSettings();
+      unsubCategories();
+      unsubProducts();
+    };
+  }, [user, selectedCategory]);
+
+  // --- Logic Admin (Firestore Write) ---
+  
+  const handleAddProduct = async (newProduct) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), newProduct);
+    } catch (e) { alert('Lỗi thêm sản phẩm: ' + e.message); }
   };
 
-  const handleLogout = () => { setAppUser(null); localStorage.removeItem('bkm_phone'); setView('landing'); };
+  const handleUpdateProduct = async (id, updatedData) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id), updatedData);
+    } catch (e) { alert('Lỗi cập nhật: ' + e.message); }
+  };
 
-  if (firebaseConfigError) return <div className="h-screen flex items-center justify-center text-red-500 font-bold px-4 text-center">{firebaseConfigError}</div>;
-  if (view === 'loading') return <div className="h-screen flex items-center justify-center"><Loader className="animate-spin text-orange-500"/></div>;
+  const handleDeleteProduct = async (id) => {
+    if (!user) return;
+    if(confirm('Xóa sản phẩm này khỏi cơ sở dữ liệu?')) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
+      } catch (e) { alert('Lỗi xóa: ' + e.message); }
+    }
+  };
 
-  // VIEW: LANDING PAGE
-  if (view === 'landing') return (
-    <>
-      {toast && <Toast {...toast} onClose={()=>setToast(null)}/>}
-      <LandingPage 
-        products={products} 
-        categories={categories} 
-        shopSettings={shopSettings} 
-        onGoToAdmin={() => {
-          if(appUser) setView('dashboard');
-          else setView('login');
-        }} 
+  const handleAddCategory = async (name) => {
+    if (!user) return;
+    const newCat = {
+      name,
+      slug: name.toLowerCase().replace(/ /g, '-')
+    };
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'categories'), newCat);
+  };
+
+  const handleDeleteCategory = async (id) => {
+    if (!user) return;
+    if(confirm('Xóa danh mục? Sản phẩm thuộc danh mục này sẽ bị ẩn.')) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', id));
+      // Nếu đang chọn danh mục vừa xóa, reset về cái đầu tiên
+      if (selectedCategory === id && categories.length > 1) {
+        setSelectedCategory(categories.find(c => c.id !== id)?.id);
+      }
+    }
+  };
+
+  const handleUpdateSettings = async (newSettings) => {
+    if (!user) return;
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), newSettings);
+  };
+
+  // --- Hàm Seed Data (Chỉ dùng khi DB trống) ---
+  const seedData = async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      // 1. Settings
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), DEFAULT_SETTINGS);
+      
+      // 2. Categories
+      const catMap = {}; // name -> id
+      for (const cat of INITIAL_CATEGORIES) {
+        const ref = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'categories'), cat);
+        catMap[cat.name] = ref.id;
+      }
+
+      // 3. Products
+      for (const prod of INITIAL_PRODUCTS) {
+        // Map product to newly created category ID
+        const catId = catMap[prod.categoryName];
+        const { categoryName, ...prodData } = prod;
+        if (catId) {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), {
+            ...prodData,
+            category: catId
+          });
+        }
+      }
+      alert("Đã khởi tạo dữ liệu mẫu thành công!");
+    } catch (e) {
+      console.error(e);
+      alert("Lỗi khởi tạo: " + e.message);
+    }
+    setIsLoading(false);
+  };
+
+  // --- Render ---
+
+  if (isAdminMode) {
+    return (
+      <AdminDashboard 
+        products={products}
+        categories={categories}
+        settings={settings}
+        onExitAdmin={() => setIsAdminMode(false)}
+        onAddProduct={handleAddProduct}
+        onUpdateProduct={handleUpdateProduct}
+        onDeleteProduct={handleDeleteProduct}
+        onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
+        onUpdateSettings={handleUpdateSettings}
+        onSeedData={seedData}
+        hasData={categories.length > 0 || products.length > 0}
       />
-    </>
-  );
+    );
+  }
 
-  // VIEW: LOGIN
-  if (view === 'login') return (
-      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans" style={{fontFamily:'Quicksand'}}>
-        <button onClick={()=>setView('landing')} className="absolute top-6 left-6 bg-white px-4 py-2 rounded-full shadow text-gray-600 font-bold flex gap-2 hover:text-orange-600 transition"><HomeIcon size={18}/> Về Trang Chủ</button>
-        {toast && <Toast {...toast} onClose={()=>setToast(null)}/>}
-        <div className="bg-white w-full max-w-md p-10 rounded-3xl shadow-2xl border border-orange-100 text-center">
-            <Logo className="justify-center mb-6" customUrl={shopSettings.logoUrl}/>
-            <h2 className="text-xl font-bold mb-6 text-gray-800">Đăng Nhập Nhân Viên</h2>
-            <div className="space-y-4 text-left">
-                <div><label className="text-sm font-bold text-gray-500">SĐT</label><input id="login-phone" className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500" placeholder="09..." /></div>
-                <div><label className="text-sm font-bold text-gray-500">Mật khẩu</label><input id="login-pass" type="password" className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-orange-500" placeholder="••••" /></div>
-                <button onClick={()=>{
-                    const p = document.getElementById('login-phone').value;
-                    const pw = document.getElementById('login-pass').value;
-                    handleLogin(p, pw);
-                }} className="w-full bg-orange-600 text-white font-bold py-3 rounded-lg hover:bg-orange-700">Vào Hệ Thống</button>
-            </div>
-            <div className="mt-4 text-xs text-gray-400">*Chưa có tài khoản? Liên hệ chủ tiệm.</div>
+  // Loading Screen
+  if (isLoading && products.length === 0 && categories.length === 0) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-white text-rose-600">
+        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+        <p className="text-gray-500">Đang tải dữ liệu từ cửa hàng...</p>
+        <button onClick={() => setIsAdminMode(true)} className="mt-8 text-sm text-blue-500 underline">
+          Vào trang quản trị để tạo dữ liệu nếu lần đầu chạy
+        </button>
+      </div>
+    );
+  }
+
+  // Storefront UI
+  return (
+    <div className="min-h-screen bg-neutral-50 font-sans text-gray-800">
+      {/* Navbar */}
+      <nav className="sticky top-0 z-50 bg-white shadow-sm">
+        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src={settings.logoUrl} alt="Logo" className="h-10 w-10 object-contain" />
+            <span className="text-xl font-bold tracking-tight text-rose-600 hidden sm:block">
+              {settings.shopName}
+            </span>
+          </div>
+
+          <div className="hidden md:flex items-center gap-8 font-medium text-sm text-gray-600">
+            <a href="#" className="hover:text-rose-600 transition">Trang chủ</a>
+            <a href="#" className="hover:text-rose-600 transition">Sản phẩm</a>
+            <a href="#" className="hover:text-rose-600 transition">Giới thiệu</a>
+            <a href="#" className="hover:text-rose-600 transition">Liên hệ</a>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button className="relative p-2 hover:bg-gray-100 rounded-full transition">
+              <ShoppingBag className="w-6 h-6 text-gray-700" />
+              {cart.length > 0 && (
+                <span className="absolute top-0 right-0 h-4 w-4 bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full">
+                  {cart.length}
+                </span>
+              )}
+            </button>
+            <button 
+              onClick={() => setIsAdminMode(true)}
+              className="p-2 hover:bg-gray-100 rounded-full transition text-gray-600"
+              title="Vào trang quản trị"
+            >
+              <User className="w-6 h-6" />
+            </button>
+            <button className="md:hidden p-2" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+              {isMobileMenuOpen ? <X /> : <Menu />}
+            </button>
+          </div>
+        </div>
+        
+        {isMobileMenuOpen && (
+          <div className="md:hidden bg-white border-t px-4 py-4 space-y-3 shadow-lg">
+            <a href="#" className="block py-2 text-gray-700">Trang chủ</a>
+            <a href="#" className="block py-2 text-gray-700">Sản phẩm</a>
+            <a href="#" className="block py-2 text-gray-700">Liên hệ</a>
+          </div>
+        )}
+      </nav>
+
+      {/* Hero Banner */}
+      <div className="relative h-[400px] w-full overflow-hidden">
+        <div className="absolute inset-0 bg-black/30 z-10"></div>
+        <img 
+          src={settings.bannerUrl || DEFAULT_SETTINGS.bannerUrl} 
+          alt="Banner" 
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-white text-center px-4">
+          <h1 className="text-4xl md:text-6xl font-bold mb-4 drop-shadow-lg">
+            Hương Vị Ngọt Ngào
+          </h1>
+          <p className="text-lg md:text-xl mb-8 max-w-2xl drop-shadow-md">
+            Chúng tôi mang đến những chiếc bánh tươi ngon nhất mỗi ngày.
+          </p>
+          <button className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-3 rounded-full font-semibold transition shadow-lg transform hover:-translate-y-1">
+            Đặt Hàng Ngay
+          </button>
         </div>
       </div>
-  );
 
-  // VIEW: DASHBOARD (Admin Panel)
-  return (
-    <div className="min-h-screen bg-orange-50 text-gray-800 flex flex-col md:flex-row font-sans" style={{fontFamily:'Quicksand'}}>
-       {toast && <Toast {...toast} onClose={()=>setToast(null)}/>}
-       
-       {/* Sidebar */}
-       <aside className="hidden md:flex flex-col w-64 bg-white border-r h-screen sticky top-0 z-20 shadow-sm">
-          <div className="p-6 border-b cursor-pointer" onClick={()=>setView('landing')}><Logo customUrl={shopSettings.logoUrl}/></div>
-          <nav className="flex-1 p-4 space-y-2">
-             <SidebarItem icon={<PlusCircle/>} label="Tạo Đơn" active={activeTab==='create-order'} onClick={()=>setActiveTab('create-order')} visible={appUser?.role!==ROLES.BAKER}/>
-             <SidebarItem icon={<ClipboardList/>} label="Đơn Hàng" active={activeTab==='orders'} onClick={()=>setActiveTab('orders')}/>
-             <SidebarItem icon={<Users/>} label="Nhân Sự" active={activeTab==='users'} onClick={()=>setActiveTab('users')} visible={appUser?.role===ROLES.OWNER||appUser?.role===ROLES.MANAGER}/>
-             <SidebarItem icon={<Settings/>} label="Cài Đặt Web" active={activeTab==='settings'} onClick={()=>setActiveTab('settings')} visible={appUser?.role===ROLES.OWNER}/>
-          </nav>
-          <div className="p-4 border-t bg-orange-50"><div className="font-bold text-orange-700 mb-2">{appUser?.name}</div><button onClick={handleLogout} className="text-red-500 text-sm flex gap-2 items-center hover:underline"><LogOut size={14}/> Đăng xuất</button></div>
-       </aside>
+      {/* Main Content Area */}
+      <main className="container mx-auto px-4 py-12">
+        {/* Category Filter */}
+        <div className="flex flex-col items-center mb-12">
+          <h2 className="text-3xl font-bold mb-8 text-gray-800">Thực Đơn Của Chúng Tôi</h2>
+          {categories.length === 0 ? (
+            <div className="text-gray-400 italic">Đang tải danh mục...</div>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-3">
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                    selectedCategory === cat.id
+                      ? 'bg-rose-600 text-white shadow-md scale-105'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300 hover:text-rose-500'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-       {/* Mobile Header */}
-       <div className="md:hidden fixed top-0 w-full bg-white shadow-sm z-20 p-4 flex justify-between items-center">
-          <Logo customUrl={shopSettings.logoUrl}/><button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} className="text-orange-600"><Menu/></button>
-       </div>
-       {mobileMenuOpen && <div className="md:hidden fixed inset-0 z-30 bg-white pt-20 px-6 flex flex-col gap-4 text-lg font-bold text-gray-700 animate-fade-in-up">
-           <button onClick={()=>setMobileMenuOpen(false)} className="absolute top-4 right-4"><X/></button>
-           <button onClick={()=>{setView('landing');setMobileMenuOpen(false)}} className="text-left border-b pb-2">Về Trang Chủ</button>
-           {appUser?.role!==ROLES.BAKER && <button onClick={()=>{setActiveTab('create-order');setMobileMenuOpen(false)}} className="text-left border-b pb-2">Tạo Đơn</button>}
-           <button onClick={()=>{setActiveTab('orders');setMobileMenuOpen(false)}} className="text-left border-b pb-2">Đơn Hàng</button>
-           {appUser?.role===ROLES.OWNER && <button onClick={()=>{setActiveTab('settings');setMobileMenuOpen(false)}} className="text-left border-b pb-2">Cài Đặt Web</button>}
-           <button onClick={handleLogout} className="text-red-500 mt-4">Đăng Xuất</button>
-       </div>}
+        {/* Product Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+          {products
+            .filter(p => !selectedCategory || p.category === selectedCategory)
+            .map((product) => (
+            <div key={product.id} className="group bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100 flex flex-col">
+              <div className="relative h-64 overflow-hidden">
+                <img 
+                  src={product.image} 
+                  onError={(e) => e.target.src = 'https://placehold.co/400x300?text=No+Image'}
+                  alt={product.name}
+                  className="w-full h-full object-cover transform group-hover:scale-110 transition duration-700"
+                />
+                <button 
+                  onClick={() => setCart([...cart, product])}
+                  className="absolute bottom-4 right-4 bg-white text-rose-600 p-3 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 hover:bg-rose-600 hover:text-white"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 flex flex-col flex-grow">
+                <h3 className="font-bold text-lg text-gray-800 mb-1">{product.name}</h3>
+                <p className="text-gray-500 text-sm mb-4 line-clamp-2">{product.description}</p>
+                <div className="mt-auto flex items-center justify-between">
+                  <span className="text-rose-600 font-bold text-lg">
+                    {formatCurrency(product.price)}
+                  </span>
+                  <button className="text-xs text-gray-400 hover:text-rose-600 underline">
+                    Chi tiết
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-       <main className="flex-1 p-4 md:p-8 overflow-y-auto mt-16 md:mt-0">
-          <div className="max-w-6xl mx-auto">
-             {activeTab==='create-order' && <CreateOrderForm categories={categories} onSubmit={async(d)=>{try{await addDoc(collection(db,'artifacts',appId,'public','data','orders'),{...d,createdBy:appUser.name,createdAt:new Date().toISOString(),status:'new',orderId:Date.now().toString().slice(-6)});showToast('Tạo đơn thành công!');setActiveTab('orders');}catch(e){showToast('Lỗi tạo đơn','error')}}} />}
-             {activeTab==='orders' && <OrderList orders={orders} />}
-             {activeTab==='users' && <div className="bg-white rounded-xl shadow border p-6"><h2 className="font-bold text-xl mb-4">Quản Lý Nhân Sự</h2><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 uppercase"><tr><th className="p-3">Tên</th><th className="p-3">SĐT</th><th className="p-3">Vai Trò</th>{appUser.role===ROLES.OWNER&&<th className="p-3 text-right">Sửa</th>}</tr></thead><tbody>{usersList.map(u=><tr key={u.phone} className="border-t"><td className="p-3 font-bold">{u.name}</td><td className="p-3 text-gray-600">{u.phone}</td><td className="p-3"><span className="bg-gray-100 px-2 py-1 rounded">{ROLE_LABELS[u.role]}</span></td>{appUser.role===ROLES.OWNER&&<td className="p-3 text-right">{u.phone!==OWNER_PHONE&&<select className="border p-1 rounded" value={u.role} onChange={e=>{updateDoc(doc(db,'artifacts',appId,'public','data','users',u.phone),{role:e.target.value});showToast('Đã cập nhật')}}><option value={ROLES.SALES}>Bán hàng</option><option value={ROLES.BAKER}>Thợ bánh</option><option value={ROLES.MANAGER}>Quản lý</option></select>}</td>}</tr>)}</tbody></table></div><div className="mt-4 text-sm text-gray-500">* Để thêm nhân viên: Hãy dùng trang Đăng Ký bên ngoài, sau đó vào đây cấp quyền.</div></div>}
-             {activeTab==='settings' && <SettingsPanel categories={categories} products={products} settings={shopSettings} 
-                onAddCategory={async(n)=>{try{await addDoc(collection(db,'artifacts',appId,'public','data','categories'),{name:n});showToast('Thêm danh mục OK');}catch(e){showToast('Lỗi','error')}}} 
-                onDeleteCategory={async(id)=>{if(window.confirm('Xóa?'))try{await deleteDoc(doc(db,'artifacts',appId,'public','data','categories',id));showToast('Đã xóa');}catch(e){showToast('Lỗi','error')}}} 
-                onSaveProduct={async(p)=>{try{if(p.id){const{id,...d}=p;await updateDoc(doc(db,'artifacts',appId,'public','data','products',id),d);showToast('Sửa OK');}else{const{id,...d}=p;await addDoc(collection(db,'artifacts',appId,'public','data','products'),d);showToast('Thêm OK');}}catch(e){showToast('Lỗi lưu SP','error')}}} 
-                onDeleteProduct={async(id)=>{if(window.confirm('Xóa SP?'))try{await deleteDoc(doc(db,'artifacts',appId,'public','data','products',id));showToast('Đã xóa');}catch(e){showToast('Lỗi','error')}}} 
-                onSaveSettings={async(s)=>{try{await setDoc(doc(db,'artifacts',appId,'public','data','settings','general'),s);showToast('Lưu cấu hình OK');}catch(e){showToast('Lỗi','error')}}} 
-             />}
+        {/* Empty State */}
+        {products.length > 0 && products.filter(p => !selectedCategory || p.category === selectedCategory).length === 0 && (
+          <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
+            <p className="text-gray-500 text-lg">Chưa có sản phẩm nào trong danh mục này.</p>
           </div>
-       </main>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-white py-12">
+        <div className="container mx-auto px-4 grid md:grid-cols-3 gap-8">
+          <div>
+            <h3 className="text-xl font-bold mb-4">{settings.shopName}</h3>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Ngọt ngào hương vị yêu thương.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-xl font-bold mb-4">Liên Hệ</h3>
+            <ul className="space-y-2 text-gray-400 text-sm">
+              <li>Địa chỉ: {settings.address}</li>
+              <li>Hotline: {settings.phone}</li>
+            </ul>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 mt-8 pt-8 border-t border-gray-800 text-center text-gray-500 text-xs">
+          © 2024 {settings.shopName}. Powered by Firebase.
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+// --- Admin Components ---
+function AdminDashboard({ 
+  products, categories, settings, hasData,
+  onExitAdmin, onAddProduct, onUpdateProduct, onDeleteProduct,
+  onAddCategory, onDeleteCategory, onUpdateSettings, onSeedData
+}) {
+  const [activeTab, setActiveTab] = useState('products');
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
+      {/* Sidebar */}
+      <aside className="w-full md:w-64 bg-slate-900 text-white flex-shrink-0">
+        <div className="p-6 flex items-center gap-2 border-b border-slate-700">
+          <div className="w-8 h-8 bg-rose-600 rounded-lg flex items-center justify-center font-bold">A</div>
+          <span className="font-bold text-lg">Quản Trị</span>
+        </div>
+        <nav className="p-4 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-visible">
+          <SidebarItem 
+            icon={<Package size={20} />} 
+            label="Sản phẩm" 
+            isActive={activeTab === 'products'} 
+            onClick={() => setActiveTab('products')} 
+          />
+          <SidebarItem 
+            icon={<LayoutGrid size={20} />} 
+            label="Danh mục" 
+            isActive={activeTab === 'categories'} 
+            onClick={() => setActiveTab('categories')} 
+          />
+          <SidebarItem 
+            icon={<Settings size={20} />} 
+            label="Cài đặt chung" 
+            isActive={activeTab === 'settings'} 
+            onClick={() => setActiveTab('settings')} 
+          />
+        </nav>
+        <div className="mt-auto p-4 border-t border-slate-700">
+          <button 
+            onClick={onExitAdmin}
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition w-full p-2"
+          >
+            <LogOut size={20} />
+            <span>Thoát Admin</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Content */}
+      <div className="flex-1 p-4 md:p-8 overflow-y-auto h-screen">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">
+              {activeTab === 'products' ? 'Quản Lý Sản Phẩm' : 
+               activeTab === 'categories' ? 'Quản Lý Danh Mục' : 'Cài Đặt Cửa Hàng'}
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">Dữ liệu được lưu trữ an toàn trên Firebase.</p>
+          </div>
+          
+          {/* Nút khẩn cấp để tạo dữ liệu nếu DB trống */}
+          {!hasData && (
+             <button onClick={onSeedData} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700">
+               <Database size={16} /> Khởi tạo Dữ liệu Mẫu
+             </button>
+          )}
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 min-h-[500px]">
+          {activeTab === 'products' && (
+            <ProductManager 
+              products={products} 
+              categories={categories}
+              onAdd={onAddProduct}
+              onUpdate={onUpdateProduct}
+              onDelete={onDeleteProduct}
+            />
+          )}
+          {activeTab === 'categories' && (
+            <CategoryManager 
+              categories={categories}
+              onAdd={onAddCategory}
+              onDelete={onDeleteCategory}
+            />
+          )}
+          {activeTab === 'settings' && (
+            <SettingsManager 
+              settings={settings}
+              onUpdate={onUpdateSettings}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarItem({ icon, label, isActive, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-3 w-full p-3 rounded-lg transition-colors whitespace-nowrap ${
+        isActive ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+      }`}
+    >
+      {icon}
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+}
+
+function ProductManager({ products, categories, onAdd, onUpdate, onDelete }) {
+  const [isEditing, setIsEditing] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '', price: '', category: '', image: '', description: ''
+  });
+
+  // Auto-select first category if available
+  useEffect(() => {
+    if (categories.length > 0 && !formData.category) {
+      setFormData(prev => ({ ...prev, category: categories[0].id }));
+    }
+  }, [categories]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const productData = { ...formData, price: Number(formData.price) };
+
+    if (isEditing) {
+      onUpdate(isEditing, productData);
+      setIsEditing(null);
+    } else {
+      onAdd(productData);
+    }
+    setFormData({ name: '', price: '', category: categories[0]?.id || '', image: '', description: '' });
+  };
+
+  const startEdit = (product) => {
+    setIsEditing(product.id);
+    setFormData(product);
+  };
+
+  if (categories.length === 0) {
+    return <div className="text-center p-10 text-slate-500">Vui lòng tạo ít nhất 1 danh mục trước khi thêm sản phẩm.</div>;
+  }
+
+  return (
+    <div>
+      <div className="bg-slate-50 p-6 rounded-xl mb-8 border border-slate-200">
+        <h3 className="font-bold text-lg mb-4 text-slate-700">{isEditing ? 'Sửa Sản Phẩm' : 'Thêm Sản Phẩm Mới'}</h3>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="col-span-2 md:col-span-1">
+            <label className="block text-sm font-medium text-slate-600 mb-1">Tên sản phẩm</label>
+            <input required type="text" className="w-full p-2 border border-gray-300 rounded" 
+              value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Giá (VNĐ)</label>
+            <input required type="number" className="w-full p-2 border border-gray-300 rounded" 
+              value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Danh mục</label>
+            <select className="w-full p-2 border border-gray-300 rounded" 
+              value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-slate-600 mb-1">Link Ảnh (URL)</label>
+            <input required type="text" className="w-full p-2 border border-gray-300 rounded" 
+              value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} />
+          </div>
+          <div className="col-span-2 flex gap-2 justify-end mt-2">
+             {isEditing && <button type="button" onClick={() => setIsEditing(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded">Hủy</button>}
+             <button type="submit" className="bg-rose-600 text-white px-6 py-2 rounded hover:bg-rose-700">{isEditing ? 'Lưu' : 'Thêm'}</button>
+          </div>
+        </form>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-50 text-slate-600 text-sm border-b">
+              <th className="p-4">Ảnh</th>
+              <th className="p-4">Tên</th>
+              <th className="p-4">Giá</th>
+              <th className="p-4 text-right">Hành động</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {products.map(p => (
+              <tr key={p.id}>
+                <td className="p-4"><img src={p.image} className="w-12 h-12 object-cover rounded" /></td>
+                <td className="p-4 font-medium">{p.name}</td>
+                <td className="p-4 text-rose-600">{formatCurrency(p.price)}</td>
+                <td className="p-4 text-right flex justify-end gap-2">
+                  <button onClick={() => startEdit(p)} className="p-2 text-blue-600 bg-blue-50 rounded"><Edit size={16}/></button>
+                  <button onClick={() => onDelete(p.id)} className="p-2 text-red-600 bg-red-50 rounded"><Trash2 size={16}/></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CategoryManager({ categories, onAdd, onDelete }) {
+  const [newCat, setNewCat] = useState('');
+  return (
+    <div className="max-w-2xl">
+      <div className="flex gap-4 mb-8">
+        <input type="text" value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Tên danh mục mới..." className="flex-1 p-3 border border-gray-300 rounded" />
+        <button onClick={() => { if(newCat) { onAdd(newCat); setNewCat(''); }}} className="bg-rose-600 text-white px-6 rounded">Thêm</button>
+      </div>
+      <div className="space-y-3">
+        {categories.map(c => (
+          <div key={c.id} className="flex justify-between p-4 bg-slate-50 rounded border border-slate-200">
+            <span className="font-medium">{c.name}</span>
+            <button onClick={() => onDelete(c.id)} className="text-red-500 p-2"><Trash2 size={18} /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsManager({ settings, onUpdate }) {
+  const handleChange = (e) => onUpdate({ ...settings, [e.target.name]: e.target.value });
+  return (
+    <div className="max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="col-span-2">
+        <label className="block text-sm font-bold text-slate-700 mb-2">Tên Cửa Hàng</label>
+        <input type="text" name="shopName" value={settings.shopName || ''} onChange={handleChange} className="w-full p-3 border border-gray-300 rounded" />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-sm font-bold text-slate-700 mb-2">Logo URL</label>
+        <input type="text" name="logoUrl" value={settings.logoUrl || ''} onChange={handleChange} className="w-full p-3 border border-gray-300 rounded" />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-sm font-bold text-slate-700 mb-2">Banner URL</label>
+        <input type="text" name="bannerUrl" value={settings.bannerUrl || ''} onChange={handleChange} className="w-full p-3 border border-gray-300 rounded" />
+      </div>
     </div>
   );
 }
