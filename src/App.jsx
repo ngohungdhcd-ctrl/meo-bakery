@@ -28,9 +28,8 @@ import {
   orderBy
 } from 'firebase/firestore';
 
-// --- CẤU HÌNH FIREBASE (DÀNH CHO BẠN SỬA ĐỔI KHI CHẠY Ở MÁY CÁ NHÂN) ---
-// Khi copy về VS Code, hãy bỏ comment và điền thông tin của bạn vào đây:
-/*
+// --- CẤU HÌNH FIREBASE CỦA BẠN (Đã được điền tự động) ---
+// Đây là thông tin chìa khóa để kết nối với cơ sở dữ liệu của bạn
 const yourFirebaseConfig = {
   apiKey: "AIzaSyBM8pividJcQ4EgXQ3pIVdXqz_pyQB8rPA",
   authDomain: "meo-bakery-4c04f.firebaseapp.com",
@@ -39,20 +38,21 @@ const yourFirebaseConfig = {
   messagingSenderId: "289466483676",
   appId: "1:289466483676:web:92f6abd8b8e1f9077c4519"
 };
-*/
 
-// --- KHỞI TẠO FIREBASE (LOGIC CHẠY TRONG PREVIEW) ---
-// Chúng tôi sử dụng biến môi trường để demo hoạt động ngay lập tức.
-// Khi bạn chạy thật, hãy thay `firebaseConfig` bằng `yourFirebaseConfig` ở trên.
+// --- KHỞI TẠO FIREBASE ---
+// Logic: Tự động chọn cấu hình phù hợp
+// Nếu chạy trên máy của bạn -> Dùng yourFirebaseConfig
+// Nếu chạy trên Preview -> Dùng biến môi trường __firebase_config
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
-  : {}; // Fallback empty object to prevent crash if config missing
+  : yourFirebaseConfig;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// Sử dụng appId từ môi trường hoặc fallback
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'meo-bakery-demo';
+
+// Định danh cửa hàng (Khi chạy trên máy bạn, dữ liệu sẽ lưu vào thư mục 'bakery-data')
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'bakery-data';
 
 // --- Dữ liệu mẫu (Dùng để khởi tạo DB nếu trống) ---
 const INITIAL_CATEGORIES = [
